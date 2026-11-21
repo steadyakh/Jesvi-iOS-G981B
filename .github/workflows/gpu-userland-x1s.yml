@@ -1,0 +1,85 @@
+# Jesvi iOS's GPU layer and user-space programs, compiled on a public Linux runner for the G981B port
+# (docs/devices/x1s/PORT-G981B.md): Mesa with panfrost and the AIR (Metal) library (tools/mk-mesa.sh), then
+# userland/build.sh with GL=1, which compiles every program and the GL/Metal libraries before it needs the iOS
+# files. That later image step fails here on purpose (no IPSW on a public runner); the images are made on the
+# owner's PC from the owner's own IPSW. Artifact: our compiled programs and libraries only, no Apple files.
+name: GPU userland x1s
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/gpu-userland-x1s.yml'
+      - 'tools/mk-mesa.sh'
+      - 'tools/mesa/**'
+      - 'userland/src/**'
+      - 'userland/build.sh'
+permissions:
+  contents: read
+env:
+  THEOS: /home/runner/theos
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Packages
+        timeout-minutes: 20
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q git curl tar xz-utils make build-essential clang lld llvm flex bison m4 perl \
+            python3 python3-venv autoconf automake libtool uuid-dev libssl-dev cpio meson ninja-build
+      - name: theos's Linux iOS toolchain and the iPhoneOS 16.5 SDK
+        run: |
+          mkdir -p "$THEOS/toolchain" "$THEOS/sdks"
+          curl -fsSL --retry 3 https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-x86_64.tar.xz \
+            | tar -xJ -C "$THEOS/toolchain"
+          test -x "$THEOS/toolchain/linux/iphone/bin/ld"
+          git clone -q --depth 1 --filter=blob:none --sparse https://github.com/theos/sdks.git "$THEOS/sdks-git"
+          git -C "$THEOS/sdks-git" sparse-checkout set iPhoneOS16.5.sdk
+          ln -s ../sdks-git/iPhoneOS16.5.sdk "$THEOS/sdks/iPhoneOS16.5.sdk"
+      - name: The compiler wrapper (xnu-deps stage 1)
+        run: |
+          mkdir -p logs
+          bash xnu-deps/setup.sh --stage1 > logs/xnu-deps.log 2>&1 || { tail -n 60 logs/xnu-deps.log; exit 1; }
+      - name: Mesa (softpipe, panfrost) and the AIR library
+        run: |
+          set -o pipefail
+          show() {
+            B=xnu-deps/build/mesa
+            tail -n 40 $B/meson-setup.log 2>/dev/null
+            grep -n -B2 -A6 'error:' $B/ninja.log 2>/dev/null | head -n 200
+            tail -n 40 $B/ninja.log 2>/dev/null
+          }
+          DRIVERS=softpipe,panfrost bash tools/mk-mesa.sh 2>&1 | tail -n 20 || { show; exit 1; }
+          AIR=1 DRIVERS=softpipe,panfrost bash tools/mk-mesa.sh 2>&1 | tail -n 20 || { show; exit 1; }
+          ls -la xnu-deps/build/mesa/out/
+      - name: Our programs, with GL (compiles everything; the image step after it has no IPSW here)
+        run: |
+          cd userland
+          GL=1 REQUIRE_SOURCE=1 bash build.sh > ../logs/userland-build.log 2>&1 || true
+          cd ..
+          grep -n -E 'error:|build.sh:' logs/userland-build.log | head -n 60 || true
+          mkdir -p out
+          for f in userland/obj/*; do
+            case "$f" in *.o|*.new|*.tsv|*.h) continue ;; esac
+            [ -f "$f" ] && cp "$f" out/
+          done
+          for need in libOSMesa.8.dylib libredwood-gl.dylib libredwoodair.dylib RedwoodMetal init stage0; do
+            [ -f "out/$need" ] || { echo "missing: $need"; tail -n 80 logs/userland-build.log; exit 1; }
+          done
+          (cd out && sha256sum * > SHA256SUMS && ls -la)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gpu-userland-x1s-${{ github.sha }}
+          path: out/
+          retention-days: 30
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: gpu-userland-x1s-logs-${{ github.sha }}
+          path: logs/
+          retention-days: 14

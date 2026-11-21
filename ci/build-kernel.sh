@@ -21,6 +21,7 @@ bash xnu-deps/setup.sh --stage1
 bash xnu-deps/setup.sh --rebuild-libs
 export GIC_V2=1
 bash xnu/xnu-build.sh -j"$jobs" -k build > "$out/build.log" 2>&1 || {
+    grep -n -E 'error:|fatal error' "$out/build.log" | head -40 >&2 || true
     tail -60 "$out/build.log" >&2
     exit 1
 }

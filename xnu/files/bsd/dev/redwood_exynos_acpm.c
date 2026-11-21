@@ -653,6 +653,7 @@ SYSCTL_PROC(_kern_redwood, OID_AUTO, thermal_pressure, CTLTYPE_INT | CTLFLAG_RD 
 #define HEAT_PS_HOLD_EN         (1u << 8)
 int redwood_pmic_read(uint8_t type, uint8_t reg, uint8_t *value);
 int redwood_pmic_write(uint8_t type, uint8_t reg, uint8_t value);
+extern boolean_t ml_set_interrupts_enabled(boolean_t enable);
 static uint32_t heat_stop_c;
 static unsigned heat_stop_seen;
 

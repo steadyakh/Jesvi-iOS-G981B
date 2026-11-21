@@ -202,7 +202,9 @@ if [ "${REQUIRE_SOURCE:-0}" = 1 ] && [ -n "$PREBUILT" ]; then
 fi
 if [ -n "$PREBUILT" ]; then
 	echo "build.sh: not compiling, using the programs in prebuilt/userland"
-	for f in ../prebuilt/userland/*; do
+	# PREBUILT_DIR=...: the programs from elsewhere (the G981B port: prebuilt/userland plus the GL libraries of its
+	# public CI, gpu-userland-x1s.yml)
+	for f in ${PREBUILT_DIR:-../prebuilt/userland}/*; do
 		# keep a file that did not change (and its time stamp): system.apfs depends on stage0
 		cmp -s "$f" "obj/$(basename "$f")" || cp "$f" obj/
 	done
@@ -706,7 +708,7 @@ if [ -d $IOS/rootfs/usr/lib ]; then
 	# points back into /var); point them at the data that ships with the system, and use this machine's zone
 	zone=$(timedatectl show -p Timezone --value 2>/dev/null || true)
 	# macOS: /etc/localtime -> /var/db/timezone/zoneinfo/Area/City
-	[ -n "$zone" ] || zone=$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')
+	[ -n "$zone" ] || zone=$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p' || true)    # (Windows: no /etc/localtime)
 	zone=${zone:-UTC}
 	# perl, not sed -i: BSD sed takes the next argument as -i's suffix and does not know \t
 	ZONE=$zone perl -pi -e 's|^l\t/usr/share/zoneinfo\t/private/var/db/timezone/zoneinfo$|l\t/usr/share/zoneinfo.default\t/private/var/db/timezone/zoneinfo|;

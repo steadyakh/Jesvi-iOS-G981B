@@ -21,7 +21,12 @@ for source,dest in files.items():
 shutil.copy2(repo/'userland/src/metal_plugin.plist',a.tree/'lib/RedwoodMetal.bundle/Info.plist')
 link=a.tree/'lib/RedwoodMetal.bundle/libredwoodair.dylib'
 if link.is_symlink():link.unlink()
-if not link.exists():link.symlink_to('../libredwoodair.dylib')
+if not link.exists():
+ import os
+ if os.name=='nt' and os.environ.get('MKAPFS_LINKS'):
+  # Windows (the G981B port's image build): no symbolic links without a privilege; noted for mkapfs.py instead
+  with open(os.environ['MKAPFS_LINKS'],'a',newline='\n') as notes:notes.write(f'{link.resolve()}\t../libredwoodair.dylib\n')
+ else:link.symlink_to('../libredwoodair.dylib')
 # Publish the real device once, before normal applications start. metal=1 remains
 # the kernel prerequisite; the existing softkeybag/launchd handoff is unchanged.
 # Old kernels must retain discovery off; auto verifies the kernel policy before

@@ -637,6 +637,87 @@ SYSCTL_DECL(_kern_redwood);
 SYSCTL_PROC(_kern_redwood, OID_AUTO, thermal_pressure, CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_LOCKED,
     NULL, 0, sysctl_thermal_pressure, "I", "Darwin thermal pressure, or -1 before a valid Exynos TMU sample");
 
+/*
+ * Boot-arg thermal_stop=C (x1s, SM-G981B; 0 or absent: off, as before): power the phone off when any zone reads C
+ * degrees or more twice in a row (two samples, 250 ms apart). The G981B's owner's limit is 70 C. The sequence is the
+ * earlier HakiOS-S20 port's heat guard (drivers/power/hakios.exynos_thermal.c there), run on that phone on 11 Nov
+ * 2026, which is Samsung's sec_power_off: the power chip's restart features off (WTSR, SMPL; RTC block 2, register
+ * 0x01 bits 6-7, register 0x03 bit 3), the APM told to stop (channel 4, protocol stop), PS_HOLD low (PMU 0x30C bit 8).
+ * A USB cable can keep the power chip on: then the phone halts here instead.
+ */
+#define HEAT_ACPM_CH_FRAMEWORK  4
+#define HEAT_ACPM_STOP          (1u << 22)
+#define HEAT_PMIC_RTC           2
+#define HEAT_PMU_PHYS           0x15860000U
+#define HEAT_PMU_PS_HOLD        0x030cU
+#define HEAT_PS_HOLD_EN         (1u << 8)
+int redwood_pmic_read(uint8_t type, uint8_t reg, uint8_t *value);
+int redwood_pmic_write(uint8_t type, uint8_t reg, uint8_t value);
+static uint32_t heat_stop_c;
+static unsigned heat_stop_seen;
+
+static int
+heat_pmic_clear(uint8_t reg, uint8_t bits)
+{
+	uint8_t v;
+
+	if (redwood_pmic_read(HEAT_PMIC_RTC, reg, &v) != 0) {
+		return -1;
+	}
+	return (v & bits) == 0 ? 0 : redwood_pmic_write(HEAT_PMIC_RTC, reg, (uint8_t)(v & ~bits));
+}
+
+static void __dead2
+heat_power_off(int celsius)
+{
+	uint32_t stop[4] = { HEAT_ACPM_STOP, 0, 0, 0 };
+	struct channel fw;
+	int wtsr, sub, apm = -1;
+	vm_offset_t pmu = ml_io_map(HEAT_PMU_PHYS, 0x1000);
+	boolean_t istate;
+
+	/* everything said while interrupts are on (XNU panics on console output with them off) */
+	dlog("thermal_stop: %d C, at or above thermal_stop=%u: powering the phone off", celsius, heat_stop_c);
+	wtsr = heat_pmic_clear(0x01, 0xC0);
+	sub = heat_pmic_clear(0x03, 0x08);
+	if (find_channel(HEAT_ACPM_CH_FRAMEWORK, &fw) == 0) {
+		apm = ipc(&fw, stop);
+	}
+	dlog("thermal_stop: WTSR/SMPL off %d, SUB_SMPL off %d, APM stop %d; PS_HOLD low", wtsr, sub, apm);
+	istate = ml_set_interrupts_enabled(FALSE);
+	if (pmu != 0) {
+		__builtin_arm_dsb(0xf);
+		wr((volatile uint8_t *)(pmu + HEAT_PMU_PS_HOLD), rd((volatile uint8_t *)(pmu + HEAT_PMU_PS_HOLD)) & ~HEAT_PS_HOLD_EN);
+		__builtin_arm_dsb(0xf);
+	}
+	delay_for_interval(2000, NSEC_PER_MSEC);
+	(void)ml_set_interrupts_enabled(istate);
+	dlog("thermal_stop: still on: a USB cable keeps the power chip on. Unplug it, or hold Volume Down + Power.");
+	(void)ml_set_interrupts_enabled(FALSE);
+	for (;;) {
+		__builtin_arm_wfi();
+	}
+}
+
+static void
+heat_stop_check(const int temp[4])
+{
+	int hottest = -1;
+
+	if (heat_stop_c == 0) {
+		return;
+	}
+	for (unsigned z = 0; z < 4; z++) {
+		if (temp[z] > hottest) {
+			hottest = temp[z];
+		}
+	}
+	heat_stop_seen = hottest >= (int)heat_stop_c ? heat_stop_seen + 1 : 0;
+	if (heat_stop_seen >= 2) {
+		heat_power_off(hottest);
+	}
+}
+
 static void
 thermal_pressure_sample(const int temp[4])
 {
@@ -1140,6 +1221,12 @@ acpm_thread(void *arg, wait_result_t wr_unused)
 	PE_parse_boot_argn("dvfs", &mode, sizeof(mode));
 	PE_parse_boot_argn("dvfs_wait", &wait, sizeof(wait));
 	PE_parse_boot_argn("dvfs_hot", &hot_at, sizeof(hot_at));
+	if (PE_parse_boot_argn("thermal_stop", &heat_stop_c, sizeof(heat_stop_c)) && heat_stop_c != 0) {
+		if (heat_stop_c < 20 || heat_stop_c > 90) {
+			heat_stop_c = 70;
+		}
+		dlog("thermal_stop=%u: the phone powers off at %u C in any zone (two samples)", heat_stop_c, heat_stop_c);
+	}
 	PE_parse_boot_argn("dvfs_gov", &govern, sizeof(govern));
 	PE_parse_boot_argn("fb_hot", &fb_hot, sizeof(fb_hot));
 	PE_parse_boot_argn("dvfs_gov_gpu", &govern_gpu, sizeof(govern_gpu));
@@ -1200,17 +1287,24 @@ acpm_thread(void *arg, wait_result_t wr_unused)
 	intr = (volatile uint8_t *)ml_io_map(ACPM_INTR_PHYS, 0x1000);
 	sram = (volatile uint8_t *)ml_io_map(ACPM_SRAM_PHYS, ACPM_SRAM_SIZE);
 	if (intr == NULL || sram == NULL) {
-		dlog("the ACPM mailbox or its SRAM could not be mapped");
+		dlog("the ACPM mailbox or its SRAM could not be mapped%s",
+		    heat_stop_c ? ": thermal_stop CANNOT WORK this run; stop the run" : "");
 		return;
 	}
 	dlog("dvfs=%u: ACPM framework at SRAM+%#x: %u plugins, %u channels (%u for the AP)", mode,
 	    ACPM_INITDATA, rd(sram + ACPM_INITDATA + 4), rd(sram + ACPM_INITDATA + 12),
 	    rd(sram + ACPM_INITDATA + 24));
 	if (find_channel(CH_DVFS, &ch_dvfs) != 0) {
+		if (heat_stop_c != 0) {
+			dlog("thermal_stop: no DVFS channel, so no temperature loop: the heat power-off CANNOT work; stop the run");
+		}
 		return;
 	}
 	if (find_channel(CH_TMU, &ch_tmu) != 0) {
 		ch_tmu.len = 0;
+		if (heat_stop_c != 0) {
+			dlog("thermal_stop: NO TEMPERATURE CHANNEL: the heat power-off CANNOT work this run; stop the run");
+		}
 	}
 	/* we poll: no interrupt to the AP for these two (INTMR1 bit set = masked) */
 	wr(intr + INTMR1, rd(intr + INTMR1) | (1u << CH_DVFS) | (ch_tmu.len ? 1u << CH_TMU : 0));
@@ -1482,6 +1576,7 @@ acpm_thread(void *arg, wait_result_t wr_unused)
 			}
 		}
 		thermal_pressure_sample(temp);
+		heat_stop_check(temp);
 		if (mode >= 2) {
 			bigoff_check(temp[0]);          /* zones[0] = "big" */
 			if (dyncap) {

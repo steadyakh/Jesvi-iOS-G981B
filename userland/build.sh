@@ -106,6 +106,10 @@ MINGW*|MSYS*|CYGWIN*)
 	;;
 esac
 source ../xnu/xnu-env.sh
+# -no_fixup_chains: only Apple's own linker (macOS) knows it; the Linux iOS toolchain's ld (cctools-port) neither
+# takes it nor makes chained fixups (the G981B port builds on a public Linux runner)
+NO_FIXUP_CHAINS=
+[ "$(uname)" = Darwin ] && NO_FIXUP_CHAINS=-Wl,-no_fixup_chains
 source ./software-passcode-config.sh
 
 CC="xnu-clang -arch arm64 -Os -static -nostdlib -ffreestanding -fno-stack-protector -fno-builtin -Wall -Wextra"
@@ -259,7 +263,7 @@ if [ -d $IOS/rootfs/usr/lib ]; then
 		$DYN -o obj/teetsd ../tools/fingerprint/teetsd.c
 		$DYN -o obj/dsc-exec src/dsc_exec.c
 		# Touch ID's place on screen: Apple's enrolment fingerprint moved onto the sensor, a ring while a capture waits
-		$DYN -dynamiclib -fobjc-arc -fblocks -Wl,-no_fixup_chains -framework UIKit -framework Foundation -framework CoreGraphics \
+		$DYN -dynamiclib -fobjc-arc -fblocks $NO_FIXUP_CHAINS -framework UIKit -framework Foundation -framework CoreGraphics \
 			-install_name /redwood/lib/libredwood-touchid-ui.dylib -o obj/libredwood-touchid-ui.dylib src/touchid_ui.m src/fp_ring.m
 		# iOS's Low Power Mode switch passed to the kernel's clock governor (src/lpmd.c)
 		$DYN -o obj/lpmd src/lpmd.c
@@ -268,7 +272,7 @@ if [ -d $IOS/rootfs/usr/lib ]; then
 		{ ${LDID:-ldid} -Cadhoc -S obj/redwood-motiond 2>/dev/null || codesign -s - -f obj/redwood-motiond; }
 		$DYN -framework CoreFoundation -framework AudioToolbox -framework AVFoundation -lobjc -o obj/sound_test src/sound_test.c
 		$DYN -framework CoreFoundation -lMobileGestalt -o obj/mg_test src/mg_test.c
-        $DYN -dynamiclib -fobjc-arc -fblocks -Wl,-no_fixup_chains -framework UIKit -framework QuartzCore \
+        $DYN -dynamiclib -fobjc-arc -fblocks $NO_FIXUP_CHAINS -framework UIKit -framework QuartzCore \
             -o obj/libredwood-graphics.dylib src/graphics_compat.m
 
 		$DYN -framework CoreFoundation -framework AVFoundation -lobjc -o obj/torch_test src/torch_test.c

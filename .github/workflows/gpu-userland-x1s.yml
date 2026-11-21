@@ -67,9 +67,9 @@ jobs:
           # they are linked against the SDK alone (as the HakiOS-S20 port's x1s-mesa.yml did)
           mkdir -p sysimage/rootfs/usr/lib
           cd userland
-          GL=1 REQUIRE_SOURCE=1 bash build.sh > ../logs/userland-build.log 2>&1 || true
+          GL=1 REQUIRE_SOURCE=1 bash -x build.sh > ../logs/userland-build.log 2>&1 && echo "build.sh: exit 0" >> ../logs/userland-build.log || echo "build.sh: exit $?" >> ../logs/userland-build.log
           cd ..
-          grep -n -E 'error:|build.sh:' logs/userland-build.log | head -n 60 || true
+          tail -n 60 logs/userland-build.log | cut -c1-300
           mkdir -p out
           for f in userland/obj/*; do
             case "$f" in *.o|*.new|*.tsv|*.h) continue ;; esac

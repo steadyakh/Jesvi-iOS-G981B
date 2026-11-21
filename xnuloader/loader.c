@@ -56,7 +56,16 @@ struct payload_entry { char name[16]; uint32_t size; uint32_t reserved; };
 #ifndef SUPER_TAIL_START
 #define SUPER_TAIL_START 0x1E8B04000ULL
 #endif
-#if LOG_IN_RECOVERY
+#if LOG_IN_BOOT
+/*
+ * x1s (SM-G981B): the owner's rule is that only the boot partition is ever written. The image there is laid out like
+ * x1slte's recovery image (UEFI at 0, kernel at 32 MB, root at 52 MB), so the slot at 16 MB is free and outside the
+ * AVB-hashed head. Recovery (TWRP) and super (the earlier port's system volume) are never written.
+ */
+#define LOG_PARTITION       u"boot"
+#define LOG_PARTITION_ASCII "boot"
+#define LOG_OFFSET          0x01000000ULL /* 16 MB into boot: clear of the UEFI image (0) and the kernel (32 MB) */
+#elif LOG_IN_RECOVERY
 #define LOG_PARTITION       u"recovery"   /* y2s has no logdump: park the log in the recovery image */
 #define LOG_PARTITION_ASCII "recovery"
 #define LOG_OFFSET          0x01000000ULL /* 16 MB into recovery: clear of the UEFI image (0) and the kernel (32 MB) */
@@ -2213,9 +2222,11 @@ block_start(int kernel_on_this_core)
 				}
 			}
 		}
+#if !FLASH_BOOT_ONLY      /* x1s (SM-G981B): the kernel gets no write path at all (owner's rule: boot only) */
 		if (block_write_requested && block_is_darwin(info, bio, bp)) {
 			block_write_part = (int)block_shared.parts;
 		}
+#endif
 		block_bios[block_shared.parts++] = bio;
 		if (block_probe_requested && bp->name[0] == 'd' && bp->name[1] == 'a' && bp->name[2] == 'r' &&
 		    bp->name[3] == 'w' && bp->name[4] == 'i' && bp->name[5] == 'n' && bp->name[6] == 0) {
@@ -5276,6 +5287,12 @@ stage_write(const char *part, uint64_t off)
 	uint64_t bs, size, len = stage_len, done = 0;
 	uint8_t *src = stage_buf;
 
+#if FLASH_BOOT_ONLY
+	/* x1s (SM-G981B): the owner's rule: only the boot partition is written, nothing else, whatever is asked */
+	if (!str_eq(part, "boot")) {
+		return "refused: this build (FLASH_BOOT_ONLY) writes only the boot partition";
+	}
+#endif
 	if (str_eq(part, "userdata")) {
 		if (USERDATA_WIN_LEN == 0 || off < USERDATA_WIN_OFF || off + len > USERDATA_WIN_OFF + USERDATA_WIN_LEN) {
 			return "refused: userdata only inside the port's own window (USERDATA_WIN_OFF/LEN)";
@@ -5402,6 +5419,12 @@ misc_keep_recovery(void)
 	efi_block_io *bio = find_partition_ascii("misc");
 	uint64_t bs;
 
+#if FLASH_BOOT_ONLY
+	/* x1s (SM-G981B): starts from boot, not recovery, and only boot is ever written: misc is left alone */
+	(void)blk; (void)cmd; (void)bio; (void)bs;
+	print("misc: not written (FLASH_BOOT_ONLY)\n");
+	return;
+#endif
 	if (bio == NULL || bio->media == NULL || (bs = bio->media->block_size) == 0 || bs > sizeof(blk)) {
 		print("misc: no partition (or an odd block size): the boot-recovery flag is not kept\n");
 		return;

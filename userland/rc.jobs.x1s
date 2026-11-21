@@ -1,0 +1,5 @@
+# Commands run by the launchd job com.redwood.demo (see com.redwood.demo.plist), for the G981B (RC_JOBS=rc.jobs.x1s).
+# The package manager's preparation once per boot (tools/x1s/mk-jb-win.py's prep.sh: dpkg's database, uicache),
+# and what the Storage page is computed from (the sizes of the root and the data volume, MobileGestalt's DiskUsage).
+/var/jb/bin/sh /var/jb/prep.sh
+/redwood/bin/mg_test statfs DiskUsage

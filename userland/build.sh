@@ -1248,6 +1248,14 @@ if [ -f $IOS/system.manifest ] && [ -f $CACHE/dyld_shared_cache_arm64 ] &&
 	else
 		cp $IOS/system.manifest obj/system-files.manifest
 	fi
+	# Windows (the G981B port; tools/mk-jb-win.py): the prefix's links, owners and set-user-ID bits, which the copy
+	# on NTFS could not keep, go into the image through its manifest -- for /jb and for the applications copied
+	# above (from the earlier HakiOS-S20 port's build.sh)
+	if [ -d ../jb/root/var/jb ] && [ -f ../jb/root/var/jb.manifest ]; then
+		{ awk -F'\t' 'BEGIN { OFS = "\t" } { $4 = "jb/" $4; print }' ../jb/root/var/jb.manifest
+		  awk -F'\t' '$4 ~ /^Applications\// { print }' ../jb/root/var/jb.manifest
+		} | tr -d '\r' >> obj/system-files.manifest
+	fi
 	# TrollStore (opa334, MIT; the official 2.1.1 release, TrollStore.tar) for installing IPAs: com.redwood.trollstore
 	# runs its own trollstorehelper install-trollstore once on a data volume without it (userland/src/trollstore_once.c)
 	TS=${TROLLSTORE_TAR:-$HOME/ios-port-research/work/sideloading/TrollStore-uncompressed.tar}

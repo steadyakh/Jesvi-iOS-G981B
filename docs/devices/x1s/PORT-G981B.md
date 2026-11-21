@@ -59,8 +59,19 @@ camera set. The differences:
 
 ## Next
 
-- The iOS images (root.apfs and the system volume) from the owner's IPSW, built on Windows: Jesvi's
-  `userland/build-gpu-y2s.sh` needs macOS; the earlier port's `devices/x1s/build-images.sh` approach is the model.
+- The iOS images (root.apfs and the system volume) from the owner's IPSW, built on Windows. Read in the source
+  (21 Nov): `userland/build.sh` takes our programs from `prebuilt/userland` when there is no ld64 (PREBUILT=1; 49
+  programs are tracked there, among them stage0, init, libredwood.dylib, RedwoodMetal) and the iOS files from
+  `IOS_INPUT_DIR` (default ../sysimage). Missing from the prebuilts: the GPU layer (libOSMesa, libredwood-gl,
+  libredwoodair) that `userland/build-gpu-y2s.sh` makes on macOS. Plan:
+  1. A public CI job (ubuntu, like the private HakiOS-S20 x1s-mesa.yml) that runs `tools/mk-mesa.sh` with
+     DRIVERS=softpipe,panfrost and AIR=1 and compiles libredwood-gl; artifact = our libraries only.
+  2. On the owner's PC: unpack the IPSW as the earlier port did (E:\hakios-s20\tools\win-unpack-sysimage.sh, the
+     backslash fix in select-system.py), compare Jesvi's sysimage/select-system.py with it, then
+     `PREBUILT=1 GL=1 userland/build.sh` in Git Bash (as devices/x1s/build-images.sh did there: python3 shim,
+     mkapfs links from manifests).
+  3. Root from RAM over USB is not possible with this loader on Windows yet (no xl); first try a small root at boot
+     +44 MiB (rpart=boot) and the system volume read from a partition, owner's OK before any super write.
 - Root from RAM or a read-only partition first; no write of super/userdata without the owner's OK.
 - The loader's 6 GB memory limit (MAX_MEM_SIZE) vs this phone's 12 GB.
 

@@ -38,6 +38,14 @@ camera set. The differences:
   (Mongoose cores off, clocks read only, power off at 70 C). No root image yet: the kernel is expected to stop at
   the root mount; the goal is to see it start.
 - Undo: flash the backup above to `boot` in TWRP.
+- **Measured on the phone (12:35-12:55):** step 1 reached the loader's menu (owner saw it). "Log access (USB)"
+  works on Windows through libusb (`tools/x1s/fb.py`; Windows binds the loader's 18d1:d00d to WinUSB, fastboot.exe
+  cannot see it). The loader's memory map shows all 12 GB (bank 0x880000000-0xB00000000) and the three modem regions
+  reserved; its 4 KB log write to boot+16 MiB read back correct.
+- **DO NOT flash through the loader on this phone.** `oem write boot 0` of 2.4 MB failed ("the write failed") and
+  left the first 512 KB of boot as zeros (Mu-Silicium x1sPkg's UFS write through UEFI Block I/O; cause not found).
+  Afterwards the loader's reads timed out. `oem recovery-mode` (a PMU reboot reason, no storage write) brought the
+  phone to TWRP, where step 2 was written with adb `dd` and read back (sha256 bd31d15c...). Flash only from TWRP.
 
 ## Steps
 

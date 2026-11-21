@@ -69,6 +69,8 @@ def main():
     ap.add_argument('--kernel')
     ap.add_argument('--root')
     ap.add_argument('--cmdline', default='')
+    ap.add_argument('--rdpart', help='a partition the loader READS the system image from into memory (e.g. super)')
+    ap.add_argument('--rdsize', type=lambda x: int(x, 0), help='the size of the system image in bytes (it starts at 0)')
     ap.add_argument('--devmode', action='store_true', help="the loader's menu and text at every start")
     ap.add_argument('-o', '--output', required=True)
     a = ap.parse_args()
@@ -94,6 +96,8 @@ def main():
             cmd += ['--kpart', 'boot', '--koff', '%x' % KERNEL_AT]
         if root:
             cmd += ['--rpart', 'boot', '--roff', '%x' % ROOT_AT, '--rsize', '%x' % len(root)]
+        if a.rdpart:
+            cmd += ['--rdpart', a.rdpart, '--rdoff', '0', '--rdsize', '%x' % a.rdsize]
         if a.cmdline:
             cmd += ['--cmdline', a.cmdline]
         subprocess.run(cmd, check=True)

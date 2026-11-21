@@ -14,7 +14,8 @@ n=$(wc -c < "$img")
 [ "$n" -gt 0 ] && [ "$n" -le 61865984 ] || { echo "twrp-flash-boot: $n bytes does not fit the boot partition" >&2; exit 1; }
 want=$(sha256sum "$img" | cut -c1-64)
 a() { MSYS_NO_PATHCONV=1 adb "$@"; }
-a get-state 2>/dev/null | grep -q recovery || { echo "twrp-flash-boot: the phone is not in TWRP" >&2; exit 1; }
+state=$(a get-state 2>/dev/null | tr -d '\r' || true)     # (not `| grep -q`: with pipefail, adb's broken pipe fails it)
+[ "$state" = recovery ] || { echo "twrp-flash-boot: the phone is not in TWRP ($state)" >&2; exit 1; }
 a push "$(cygpath -w "$img")" /tmp/flash-boot.img > /dev/null
 got=$(a shell "sha256sum /tmp/flash-boot.img" | cut -c1-64)
 [ ${#want} -eq 64 ] && [ "$got" = "$want" ] || { echo "twrp-flash-boot: copy on the phone differs ($got)" >&2; exit 1; }

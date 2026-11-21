@@ -57,6 +57,13 @@ camera set. The differences:
   phone switched itself off about 15 s after the kernel started, twice (the owner pressed Power once in between).
 - Now in boot: the same with `thermal_stop=70` (sha256 2a1dec51...).
 
+- **Measured on the phone (21 Nov, 18:25): Jesvi iOS runs on the G981B -- home screen, touch works.** super holds
+  Jesvi's system.apfs (2,592,194,560 bytes, sha256 d9684f08..., owner's OK; the earlier port's image is backed up as
+  E:\s20-g981builds\system-jb-20261114.apfs). Boot: UEFI + loader + kernel + root (11.7 MB at boot+44 MiB) and
+  `rdpart=super` (the loader reads the system volume into RAM; nothing is written at run time). Boot line:
+  `cpumask=0x3f dvfs=1 thermal_stop=70 mali=1 metal=1 camtl=1 fb_threads=6 touch_ts=1 jit_flush=1`. GPU about 20
+  frames/s, 35-44 C. Fixed on the way: CR LF line ends from Windows in /etc/rc (metal_props never published Metal).
+
 ## Next
 
 - The iOS images (root.apfs and the system volume) from the owner's IPSW, built on Windows. Read in the source

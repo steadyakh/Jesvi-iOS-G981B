@@ -26,6 +26,19 @@ camera set. The differences:
 - No Apple or Samsung files in git or in public build artifacts.
 - First tests run from RAM where possible; never start a test straight out of TWRP (GPU state: black screen).
 
+## Status (21 Nov 2026)
+
+- Built on this fork's public CI: Jesvi's kernel (unchanged, 44902222478) and with `thermal_stop` (44903962682);
+  the x1s UEFI (44902857873, Mu-Silicium 5cbdfb2a). Loader built on Windows with `LOG_IN_BOOT=1 FLASH_BOOT_ONLY=1`.
+- **On the phone:** step 1 (UEFI + loader menu, no kernel, `--devmode`) written to `boot` from TWRP and read back
+  (sha256 d73be559...). Previous boot backed up first: `E:\s20-g981b\boot-backups\boot-before-jesvi-step1.img`
+  (sha256 a97e41bc..., matched the phone). Restarted 12:24: nothing on USB (the loader starts USB only from its menu).
+  What the screen shows is not known yet.
+- Ready, not flashed: step 2 = step 1 + the guarded kernel, boot line `-v cpumask=0x3f dvfs=1 thermal_stop=70`
+  (Mongoose cores off, clocks read only, power off at 70 C). No root image yet: the kernel is expected to stop at
+  the root mount; the goal is to see it start.
+- Undo: flash the backup above to `boot` in TWRP.
+
 ## Steps
 
 1. [running] Build Jesvi's own x1slte kernel on this fork's free public CI (baseline, unchanged source).

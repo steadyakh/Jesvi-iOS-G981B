@@ -30,7 +30,12 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q git curl tar xz-utils make build-essential clang lld llvm flex bison m4 perl \
-            python3 python3-venv autoconf automake libtool uuid-dev libssl-dev cpio meson ninja-build ldid
+            python3 python3-venv autoconf automake libtool uuid-dev libssl-dev cpio meson ninja-build
+      - name: ldid (code signing, ProcursusTeam's release, pinned)
+        run: |
+          sudo curl -fsSL --retry 3 -o /usr/local/bin/ldid             https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus8/ldid_linux_x86_64
+          sudo chmod +x /usr/local/bin/ldid
+          ldid 2>&1 | head -2 || true
       - name: theos's Linux iOS toolchain and the iPhoneOS 16.5 SDK
         run: |
           mkdir -p "$THEOS/toolchain" "$THEOS/sdks"

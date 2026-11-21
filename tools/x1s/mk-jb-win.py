@@ -188,6 +188,18 @@ if [ -f /var/jb/.image-status ] && ! /var/jb/usr/bin/grep -q '^Package: org.cool
 	echo "prep.sh: dpkg's database replaced with this image's (the old one: $db.before-x1s-fix)"
 fi
 /var/jb/usr/libexec/firmware
+# MobileGestalt's saved answers outlive a boot on the data volume, and init renews them only when island, the light
+# sensor or Touch ID change -- not the camera (cam=5): a cache made before the camera was on says there is none
+# (no Camera app, the lock screen's camera greyed out). Once per hardware set: the cache goes and SpringBoard
+# restarts, and MobileGestalt answers anew from the device tree.
+mg=/private/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist
+mark=/private/var/db/x1s-mg-cam
+if [ "$(/var/jb/usr/bin/cat $mark 2>/dev/null)" != cam5 ]; then
+	/var/jb/usr/bin/rm -f "$mg"
+	echo cam5 > $mark
+	echo "prep.sh: MobileGestalt's cache cleared (camera); SpringBoard restarted"
+	/var/jb/usr/bin/killall -9 SpringBoard 2>/dev/null
+fi
 for app in /var/jb/Applications/*.app; do
 	[ -d "/Applications/${app##*/}" ] && continue
 	real=$(/var/jb/usr/bin/readlink "$app/Info.plist" 2>/dev/null)
@@ -327,6 +339,16 @@ def main():
                'Types: deb\nURIs: %s\nSuites: iphoneos-arm64-rootless/%s\nComponents: main\n' % (MIRROR, SUITE))
     write_file(manifest, 'etc/apt/apt.conf.d/10redwood.conf',
                'Acquire::https::CaInfo "/var/jb/etc/ssl/certs/cacert.pem";\n')
+
+    # the G981B's own tweak for Settings' storage page (tools/x1s/storagefix; built there first)
+    fix = os.path.join(ROOT, 'tools', 'x1s', 'storagefix')
+    if os.path.exists(os.path.join(fix, 'X1SStorageFix.dylib')):
+        for name, mode in (('X1SStorageFix.dylib', 0o755), ('X1SStorageFix.plist', 0o644)):
+            rel = 'usr/lib/TweakInject/' + name
+            shutil.copyfile(os.path.join(fix, name), os.path.join(JB, *rel.split('/')))
+            manifest[rel] = '%o\t0\t0\t%s' % (stat.S_IFREG | mode, rel)
+    else:
+        print('mk-jb-win.py: no tools/x1s/storagefix/X1SStorageFix.dylib (its build.sh): the storage page stays wrong')
 
     # prep.sh, and this image's database beside it for prep.sh to put in place of a broken one on the phone
     write_file(manifest, 'prep.sh', PREP, 0o755)

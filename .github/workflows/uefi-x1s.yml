@@ -1,0 +1,53 @@
+# The UEFI for the Galaxy S20 5G (SM-G981B, x1s): Mu-Silicium's own x1sPkg, pinned, with the Jesvi iOS loader hook
+# and the modem memory reservations (tools/uefi/apply-x1s.py). Output: Mu-x1s.img, an Android boot image (shim + UEFI)
+# with an empty payload slot; the XNU payload is spliced in later on the owner's PC. No Samsung or Apple files.
+name: UEFI x1s
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/uefi-x1s.yml'
+      - 'devices/exynos990/x1s/uefi/**'
+      - 'tools/uefi/**'
+permissions:
+  contents: read
+env:
+  MU_SILICIUM_COMMIT: 5cbdfb2aa7ab7ef52d145705b7898ff84fae03f5
+jobs:
+  uefi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Fetch Mu-Silicium at the pinned commit
+        run: |
+          git init -q mu && cd mu
+          git remote add origin https://github.com/Project-Silicium/Mu-Silicium.git
+          git fetch -q --depth 1 origin "$MU_SILICIUM_COMMIT"
+          git checkout -q FETCH_HEAD
+          git submodule update -q --init --recursive --depth 1
+      - name: Apply the x1s overlay
+        run: python3 tools/uefi/apply-x1s.py mu
+      - name: Build x1sPkg
+        working-directory: mu
+        run: |
+          bash ./setup_env.sh -p apt
+          python3 build_uefi.py -d x1s -r RELEASE
+          ls -la Mu-*
+      - name: Checksums
+        working-directory: mu
+        run: |
+          sha256sum Mu-* > SHA256SUMS
+          git -C . rev-parse HEAD > mu-silicium-commit.txt
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: uefi-x1s-${{ github.sha }}
+          path: |
+            mu/Mu-*
+            mu/SHA256SUMS
+            mu/mu-silicium-commit.txt
+          retention-days: 30
+          if-no-files-found: error

@@ -40,7 +40,9 @@
 #include <sys/errno.h>
 #include <kern/clock.h>
 #include <kern/sched_prim.h>
+#include <kern/startup.h>
 #include <kern/thread.h>
+#include <kern/thread_call.h>
 #include <libkern/libkern.h>
 #include <mach/mach_types.h>
 #include <pexpert/pexpert.h>
@@ -1769,13 +1771,54 @@ void redwood_exynos_acpm_init(void);
 void
 redwood_exynos_acpm_init(void)
 {
+	static bool started;
 	uint32_t mode = 0;
 	thread_t thread;
 
 	if (!PE_parse_boot_argn("dvfs", &mode, sizeof(mode)) || mode < 1 || mode > 2) {
 		return;
 	}
+	/* once: thermal_stop starts this early (heat_early_start below), redwood_input_init asks again after the root */
+	if (os_atomic_xchg(&started, true, relaxed)) {
+		return;
+	}
 	if (kernel_thread_start(acpm_thread, NULL, &thread) == KERN_SUCCESS) {
 		thread_deallocate(thread);
 	}
 }
+
+/*
+ * thermal_stop=C (x1s): the heat guard from early boot, not only after the root is mounted. redwood_input_init (and
+ * with it this driver) runs after devfs is mounted on the root; a boot that waits for its root (60 s and more, measured
+ * on the G981B, 21 Nov) had no temperature watch until then. A second after EARLY_BOOT the thread is started here;
+ * the later call finds it running. Without thermal_stop nothing changes.
+ */
+static void
+heat_early_start(thread_call_param_t p0, thread_call_param_t p1)
+{
+	(void)p0;
+	(void)p1;
+	redwood_exynos_acpm_init();
+}
+
+static void
+heat_early_init(void)
+{
+	uint32_t c = 0;
+	thread_call_t call;
+	uint64_t deadline;
+
+	if (!PE_parse_boot_argn("thermal_stop", &c, sizeof(c)) || c == 0) {
+		return;
+	}
+	if (!PE_parse_boot_argn("dvfs", &c, sizeof(c)) || c < 1 || c > 2) {
+		printf("thermal_stop: needs dvfs=1 (or 2) on the boot line: NO HEAT POWER-OFF this run\n");
+		return;
+	}
+	call = thread_call_allocate(heat_early_start, NULL);
+	if (call != NULL) {
+		clock_interval_to_deadline(1, NSEC_PER_SEC, &deadline);
+		thread_call_enter_delayed(call, deadline);
+	}
+}
+STARTUP(EARLY_BOOT, STARTUP_RANK_LAST, heat_early_init);

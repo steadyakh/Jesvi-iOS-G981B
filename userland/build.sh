@@ -437,7 +437,11 @@ if [ -d $IOS/rootfs/usr/lib ]; then
 		# (+ src/h264_encoder.c: a software H.264 encoder for VideoToolbox, the S20 having no AVE; OpenH264 from
 		#  ../../third-party/openh264, built with: make OS=ios ARCH=arm64 SDK_MIN=16.0 SDKROOT=<sdk> libraries)
 		OH=${OPENH264:-../../third-party/openh264}
-		if [ "${DEVICE:-x1slte}" = x1slte ]; then
+		# X1S_NO_MEDIA=1 (the G981B port's public build): neither, for now -- the camera build reads a commit of the
+		# private history, and OpenH264 is not in this tree; the camera and video encoding come after the first boot
+		if [ "${X1S_NO_MEDIA:-0}" = 1 ]; then
+			echo "build.sh: X1S_NO_MEDIA=1: no libredwood-media.dylib (camera, H.264)"
+		elif [ "${DEVICE:-x1slte}" = x1slte ]; then
 			CAMERA_PERMANENT=1 CAMERA_SDK="${THEOS:-$HOME/theos}/sdks/iPhoneOS16.5.sdk" CAMERA_OPENH264="$OH" sh ../tools/camera/build-profile-media.sh obj/camera-permanent
 			cp obj/camera-permanent/libredwood-media-dev.dylib obj/libredwood-media.dylib
 			CAMERA_SDK="${THEOS:-$HOME/theos}/sdks/iPhoneOS16.5.sdk" ../tools/camera/build-image-hooks.sh obj

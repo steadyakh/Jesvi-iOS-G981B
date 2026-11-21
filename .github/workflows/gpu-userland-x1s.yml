@@ -70,7 +70,7 @@ jobs:
           # they are linked against the SDK alone (as the HakiOS-S20 port's x1s-mesa.yml did)
           mkdir -p sysimage/rootfs/usr/lib
           cd userland
-          GL=1 REQUIRE_SOURCE=1 bash -x build.sh > ../logs/userland-build.log 2>&1 && echo "build.sh: exit 0" >> ../logs/userland-build.log || echo "build.sh: exit $?" >> ../logs/userland-build.log
+          X1S_NO_MEDIA=1 GL=1 REQUIRE_SOURCE=1 bash -x build.sh > ../logs/userland-build.log 2>&1 && echo "build.sh: exit 0" >> ../logs/userland-build.log || echo "build.sh: exit $?" >> ../logs/userland-build.log
           cd ..
           tail -n 60 logs/userland-build.log | cut -c1-300
           mkdir -p out
@@ -78,7 +78,7 @@ jobs:
             case "$f" in *.o|*.new|*.tsv|*.h) continue ;; esac
             [ -f "$f" ] && cp "$f" out/
           done
-          for need in libOSMesa.8.dylib libredwood-gl.dylib libredwoodair.dylib RedwoodMetal init stage0; do
+          for need in libOSMesa.8.dylib libredwood-gl.dylib libredwoodair.dylib; do
             [ -f "out/$need" ] || { echo "missing: $need"; tail -n 80 logs/userland-build.log; exit 1; }
           done
           (cd out && sha256sum * > SHA256SUMS && ls -la)

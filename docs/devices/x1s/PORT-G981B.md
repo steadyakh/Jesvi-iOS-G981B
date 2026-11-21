@@ -45,7 +45,24 @@ camera set. The differences:
 - **DO NOT flash through the loader on this phone.** `oem write boot 0` of 2.4 MB failed ("the write failed") and
   left the first 512 KB of boot as zeros (Mu-Silicium x1sPkg's UFS write through UEFI Block I/O; cause not found).
   Afterwards the loader's reads timed out. `oem recovery-mode` (a PMU reboot reason, no storage write) brought the
-  phone to TWRP, where step 2 was written with adb `dd` and read back (sha256 bd31d15c...). Flash only from TWRP.
+  phone to TWRP, where step 2 was written with adb `dd` and read back (sha256 bd31d15c...). Flash only from TWRP:
+  `tools/x1s/twrp-flash-boot.sh IMAGE` (checks, writes boot only, reads back).
+- **Measured on the phone (12:50): Jesvi's kernel boots on the G981B.** 6 cores (Mongoose off by `cpumask=0x3f`),
+  bsd_init, IOKit, then "Waiting on ... Apple_HFS" and after 60 s `panic: Failed to mount root device` (expected: no
+  root in the image). It returned to the loader, which kept the log (`oem lastlog` + upload; E:\s20-g981b\logs\
+  jesvi-step2-kernel.txt). The kernel sees about 6 GB (the loader's MAX_MEM_SIZE), not 12.
+- Found in that run: the heat guard did not run (the ACPM thread starts only after the root is mounted). Fixed: with
+  `thermal_stop` the thread starts 1 s after EARLY_BOOT (CI 44906251526).
+- **Measured on the phone (13:00): the heat power-off works.** With `thermal_stop=20` at a phone of about 25 C the
+  phone switched itself off about 15 s after the kernel started, twice (the owner pressed Power once in between).
+- Now in boot: the same with `thermal_stop=70` (sha256 2a1dec51...).
+
+## Next
+
+- The iOS images (root.apfs and the system volume) from the owner's IPSW, built on Windows: Jesvi's
+  `userland/build-gpu-y2s.sh` needs macOS; the earlier port's `devices/x1s/build-images.sh` approach is the model.
+- Root from RAM or a read-only partition first; no write of super/userdata without the owner's OK.
+- The loader's 6 GB memory limit (MAX_MEM_SIZE) vs this phone's 12 GB.
 
 ## Steps
 

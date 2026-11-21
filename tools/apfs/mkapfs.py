@@ -4,14 +4,14 @@
 usage: mkapfs.py -o IMAGE [-z [--plain DIR]...] [--time SECONDS] [--slack BLOCKS] NAME=DIR[,manifest=FILE] [NAME=DIR ...]
 
 Each NAME=DIR becomes one volume of the container (volume 0 first), case-sensitive and
-normalization-insensitive like the iOS volumes, unencrypted, read-only content laid out once.
+normalization-insensitive like the Darwin volumes, unencrypted, read-only content laid out once.
 Permission bits and symbolic links are taken from DIR; everything is owned by root:wheel
 unless a manifest says otherwise (lines of: mode in octal with the type bits, uid, gid, path,
-[link target]; ios165/system.manifest is one; a directory or symbolic link that is only in the
+[link target]; sysimage/system.manifest is one; a directory or symbolic link that is only in the
 manifest is made). With -z a regular file is stored compressed when that makes it smaller,
-as Apple stores most of the iOS root volume: a small one whole in its decmpfs attribute (type
+as Apple stores most of the Darwin root volume: a small one whole in its decmpfs attribute (type
 3, no block of its own at all), a bigger one in 64 KB zlib pieces in its resource fork (type 4); but not what is under a --plain DIR (relative to the volume's root), which stays as
-it is and in one piece -- the firmware a driver uses where it lies in memory.  Times are all --time (default: 2023-05-12, the iOS 16.5 images'), so the same
+it is and in one piece -- the firmware a driver uses where it lies in memory.  Times are all --time (default: 2023-05-12, the Darwin userland 16.5 images'), so the same
 input gives the same image byte for byte.
 
 The image is what Apple's newfs_apfs and a single transaction would leave (one checkpoint,
@@ -122,25 +122,68 @@ class Node:
         self.oid = 0
 
 
+def _windows_mode(path, st):
+    """
+    Windows keeps no Unix permissions (every file reads as 0666): a directory is 0755, a file 0755 if it is a
+    program (Mach-O, fat or thin, or a script) and 0644 otherwise. A manifest still has the last word.
+    """
+    if stat.S_ISDIR(st.st_mode):
+        return stat.S_IFDIR | 0o755
+    with open(path, 'rb') as f:
+        head = f.read(4)
+    progs = (b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe', b'\xca\xfe\xba\xbf')
+    return stat.S_IFREG | (0o755 if head in progs or head[:2] == b'#!' else 0o644)
+
+
 def read_tree(path, name=''):
     st = os.lstat(path)
+    if os.name == 'nt' and (stat.S_ISDIR(st.st_mode) or stat.S_ISREG(st.st_mode)):
+        mode = _windows_mode(path, st)
+    else:
+        mode = st.st_mode
     if stat.S_ISDIR(st.st_mode):
-        node = Node(name, st.st_mode)
+        node = Node(name, mode)
         for entry in sorted(os.listdir(path)):
             child = read_tree(os.path.join(path, entry), entry)
             if child is not None:
                 node.children[entry] = child
         return node
     if stat.S_ISREG(st.st_mode):
-        return Node(name, st.st_mode, source=path)
+        return Node(name, mode, source=path)
     if stat.S_ISLNK(st.st_mode):
         return Node(name, st.st_mode, target=os.fsencode(os.readlink(path)))
     return None                         # device nodes, FIFOs, sockets: /dev is devfs
 
 
+def add_noted_links(root, top, listing):
+    """
+    The symbolic links of a build on Windows, where Git Bash cannot make them (userland/build.sh notes each
+    one instead): lines of "full path<TAB>target". Those below `top` become links of this tree, where it has
+    nothing by that name and the directory they go in is there.
+    """
+    top = os.path.normpath(os.path.abspath(top))
+    for raw in open(listing, 'rb'):
+        fields = raw.rstrip(b'\r\n').split(b'\t')
+        if len(fields) != 2:
+            continue
+        p = os.path.normpath(os.fsdecode(fields[0]))
+        # compared without regard to case (Windows paths), but the names keep theirs
+        if not os.path.normcase(p).startswith(os.path.normcase(top) + os.sep):
+            continue
+        parts = p[len(top) + 1:].split(os.sep)
+        node = root
+        for part in parts[:-1]:
+            node = node.children.get(part)
+            if node is None or not stat.S_ISDIR(node.mode):
+                break
+        else:
+            if parts[-1] not in node.children:
+                node.children[parts[-1]] = Node(parts[-1], stat.S_IFLNK | 0o755, target=fields[1])
+
+
 def apply_manifest(root, manifest):
     for raw in open(manifest, 'rb'):
-        fields = raw.rstrip(b'\n').split(b'\t')
+        fields = raw.rstrip(b'\r\n').split(b'\t')      # (CR LF: a manifest written on Windows)
         if len(fields) < 4 or not fields[3]:
             continue
         mode, uid, gid = int(fields[0], 8), int(fields[1]), int(fields[2])
@@ -915,6 +958,8 @@ def main():
         name, _, rest = spec.partition('=')
         parts = rest.split(',')
         root = read_tree(parts[0])
+        if os.environ.get('MKAPFS_LINKS') and os.path.exists(os.environ['MKAPFS_LINKS']):
+            add_noted_links(root, parts[0], os.environ['MKAPFS_LINKS'])
         for opt in parts[1:]:
             k, _, val = opt.partition('=')
             if k == 'manifest':

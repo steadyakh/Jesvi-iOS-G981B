@@ -76,6 +76,35 @@
 #                    (../tools/apfs/check-image.sh; the system image takes a few minutes more)
 set -e -o pipefail
 cd "$(dirname "$(readlink -f "$0")")"
+# On Windows (Git Bash, no WSL; the G981B port, docs/devices/x1s/PORT-G981B.md) the images are made with PREBUILT=1.
+# Git Bash cannot make a symbolic link, so `ln -s` notes each one in obj/winlinks.tsv and ../tools/apfs/mkapfs.py
+# (MKAPFS_LINKS) puts it into the image; the links of an unpacked tree come from its .manifest (note_links below).
+# From the earlier HakiOS-S20 port's userland/build.sh, where it built that phone's images.
+note_links() { :; }
+case "$(uname)" in
+MINGW*|MSYS*|CYGWIN*)
+	mkdir -p obj
+	export MKAPFS_LINKS=$(pwd -W)/obj/winlinks.tsv
+	rm -f "$MKAPFS_LINKS"
+	ln() {
+		local s= f= a
+		while [ "${1#-}" != "$1" ]; do
+			case "$1" in *s*) s=1 ;; esac
+			case "$1" in *f*) f=1 ;; esac
+			shift
+		done
+		if [ -z "$s" ]; then command ln ${f:+-f} "$@"; return; fi
+		[ -z "$f" ] || rm -f "$2"
+		a="$(cd "$(dirname "$2")" && pwd -W)/$(basename "$2")"
+		printf '%s\t%s\n' "$a" "$1" >> "$MKAPFS_LINKS"
+	}
+	# note_links SRC DST: the symbolic links listed in SRC.manifest (apfs-extract.py's), as links of DST
+	note_links() {
+		[ -f "$1.manifest" ] || return 0
+		awk -F'\t' -v d="$(cd "$2" && pwd -W)" '$1 ~ /^12/ { print d "/" $4 "\t" $5 }' "$1.manifest" >> "$MKAPFS_LINKS"
+	}
+	;;
+esac
 source ../xnu/xnu-env.sh
 source ./software-passcode-config.sh
 
@@ -960,7 +989,7 @@ if [ -n "$FLASHBOOT" ] && [ -f $CACHE/dyld_shared_cache_arm64 ]; then
 	# built and thrown away unused. The guard ends with the cache: everything after it goes
 	# into the boot volume, which every recipe carries, flash cryptexes included
 	if [ "$CRYPTEXES" != flash ]; then
-		if [ -d $IOS/cryptex ]; then python3 ../tools/release/copy_tree.py "$IOS/cryptex" flashboot.os; else mkdir -p flashboot.os; fi
+		if [ -d $IOS/cryptex ]; then python3 ../tools/release/copy_tree.py "$IOS/cryptex" flashboot.os; note_links "$IOS/cryptex" flashboot.os; else mkdir -p flashboot.os; fi
 		D=flashboot.os/System/Library/Caches/com.apple.dyld
 		mkdir -p $D
 		for f in $CACHE/dyld_shared_cache_arm64*; do
@@ -1182,10 +1211,10 @@ if [ -f $IOS/system.manifest ] && [ -f $CACHE/dyld_shared_cache_arm64 ] &&
 	# the OS cryptex: on a device a separate volume grafted at /System/Cryptexes/OS. It holds the dyld
 	# shared cache (dyld looks there first) and a few libraries and resources outside the cache.
 	mkdir -p sysroot/System/Cryptexes
-	if [ -d $IOS/cryptex ]; then python3 ../tools/release/copy_tree.py "$IOS/cryptex" sysroot/System/Cryptexes/OS; fi
+	if [ -d $IOS/cryptex ]; then python3 ../tools/release/copy_tree.py "$IOS/cryptex" sysroot/System/Cryptexes/OS; note_links "$IOS/cryptex" sysroot/System/Cryptexes/OS; fi
 	# the App cryptex, the same way: Safari's daemons (eight launchd jobs run them from there), its settings and
 	# the bundles around it, which the root's links reach (System/Library/PreferenceBundles/MobileSafariSettings.bundle...)
-	if [ -d $IOS/cryptex-app ]; then python3 ../tools/release/copy_tree.py "$IOS/cryptex-app" sysroot/System/Cryptexes/App; fi
+	if [ -d $IOS/cryptex-app ]; then python3 ../tools/release/copy_tree.py "$IOS/cryptex-app" sysroot/System/Cryptexes/App; note_links "$IOS/cryptex-app" sysroot/System/Cryptexes/App; fi
 	D=sysroot/System/Cryptexes/OS/System/Library/Caches/com.apple.dyld
 	mkdir -p $D
 	for f in $CACHE/dyld_shared_cache_arm64*; do

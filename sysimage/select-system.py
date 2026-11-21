@@ -119,7 +119,11 @@ def entries(listing):
             entry = {}
         elif ' = ' in line or line.endswith(' ='):
             key, _, value = line.partition(' =')
-            entry[key] = value[1:] if value.startswith(' ') else value
+            value = value[1:] if value.startswith(' ') else value
+            if key in ('Path', 'Symbolic Link'):
+                # Windows' 7-Zip lists paths (and link targets) with backslashes; Apple's names have none
+                value = value.replace('\\', '/')
+            entry[key] = value
     if 'Path' in entry and 'Mode' in entry:
         yield entry
 

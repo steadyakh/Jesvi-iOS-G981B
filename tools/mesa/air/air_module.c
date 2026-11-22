@@ -132,6 +132,9 @@ enum {
    FUNC_CODE_INST_CALL = 34,
    FUNC_CODE_DEBUG_LOC = 35,
    FUNC_CODE_INST_FENCE = 36,
+   FUNC_CODE_INST_GEP_OLD = 4,            /* older bitcode (module version 1): no leading [inbounds, type] */
+   FUNC_CODE_INST_STORE_OLD = 24,         /* [ptrty, ptr, val, align, vol]: the value's type is the pointee */
+   FUNC_CODE_INST_INBOUNDS_GEP_OLD = 30,
    FUNC_CODE_INST_GEP = 43,
    FUNC_CODE_INST_STORE = 44,
    FUNC_CODE_INST_CMPXCHG = 46,
@@ -766,7 +769,36 @@ read_metadata_block(struct reader *r)
       case METADATA_GLOBAL_DECL_ATTACHMENT:
          break; /* for lazy loading and global attachments; nothing AIR needs */
       case METADATA_OLD_NODE:
-      case METADATA_OLD_FN_NODE:
+      case METADATA_OLD_FN_NODE: {
+         /* the node of older bitcode (module version 1, older Metal compilers): [n x (type, value)] -- a metadata
+          * operand when the type is metadata (a plain id), none for void, else a value, made a VALUE node of its own
+          * that is not numbered (it was never a metadata id) */
+         if (e.num_ops & 1)
+            return fail(r, "OLD_NODE with an odd operand list");
+         md = new_md(r, AIR_MD_NODE);
+         md->num_ops = e.num_ops / 2;
+         md->ops = rzalloc_array(r->m, struct air_md *, MAX2(md->num_ops, 1));
+         md->pending = rzalloc_array(r->m, unsigned, MAX2(md->num_ops, 1));
+         for (unsigned i = 0; i < md->num_ops; i++) {
+            const struct air_type *t = type_by_id(r, e.ops[2 * i]);
+            if (!t)
+               return false;
+            if (t->kind == AIR_TYPE_METADATA) {
+               md->pending[i] = e.ops[2 * i + 1] + 1;
+            } else if (t->kind != AIR_TYPE_VOID) {
+               struct air_md *v = rzalloc(r->m, struct air_md);
+               v->kind = AIR_MD_VALUE;
+               v->id = ~0u;
+               v->function_local = e.id == METADATA_OLD_FN_NODE;
+               v->value_type = t;
+               v->value_id = e.ops[2 * i + 1];
+               if (v->value_id < r->num_values)
+                  v->value = r->values[v->value_id];
+               md->ops[i] = v;
+            }
+         }
+         break;
+      }
       case METADATA_ARG_LIST:
          return fail(r, "unsupported metadata record %u", e.id);
       default:
@@ -1147,15 +1179,21 @@ read_instruction(struct reader *r, const struct air_bs_entry *e, struct air_bloc
          in->flags = take(&rc);
       break;
    }
+   case FUNC_CODE_INST_GEP_OLD:
+   case FUNC_CODE_INST_INBOUNDS_GEP_OLD:
    case FUNC_CODE_INST_GEP: {
-      bool inbounds = take(&rc) & 1;
-      const struct air_type *src = type_by_id(r, take(&rc));
+      /* the old forms carry no source type: it is what the base pointer points to (typed pointers then) */
+      bool old = e->id != FUNC_CODE_INST_GEP;
+      bool inbounds = old ? e->id == FUNC_CODE_INST_INBOUNDS_GEP_OLD : (take(&rc) & 1);
+      const struct air_type *src = old ? NULL : type_by_id(r, take(&rc));
       unsigned ids[64], n = 0;
       while (more(&rc) && n < ARRAY_SIZE(ids))
          ids[n++] = take_value_type(r, &rc);
+      const struct air_type *pt = n ? type_of_id(r, ids[0]) : NULL;
+      if (old && pt)
+         src = pt->kind == AIR_TYPE_POINTER ? pt->elem : NULL;
       if (!src || n == 0 || more(&rc))
          return fail(r, "GEP of %u operands", n);
-      const struct air_type *pt = type_of_id(r, ids[0]);
       if (!pt)
          return false;
       in = new_inst(r, AIR_OP_GEP, NULL, n);
@@ -1388,9 +1426,11 @@ read_instruction(struct reader *r, const struct air_bs_entry *e, struct air_bloc
       in->is_volatile = take(&rc);
       break;
    }
+   case FUNC_CODE_INST_STORE_OLD:
    case FUNC_CODE_INST_STORE: {
       a = take_value_type(r, &rc); /* the pointer */
-      b = take_value_type(r, &rc); /* the value */
+      /* the value: typed in the record (STORE), or of the pointee's type and given plainly (STORE_OLD) */
+      b = e->id == FUNC_CODE_INST_STORE ? take_value_type(r, &rc) : take_value(r, &rc);
       in = new_inst(r, AIR_OP_STORE, NULL, 2);
       in->operand_ids[0] = b; /* value first, as LLVM orders them */
       in->operand_ids[1] = a;

@@ -41,6 +41,27 @@ extern Class objc_getClass(const char *);
 extern SEL sel_registerName(const char *);
 extern Method class_getInstanceMethod(Class, SEL);
 extern IMP method_setImplementation(Method, IMP);
+extern int open(const char *, int, ...);
+extern Method *class_copyMethodList(Class, unsigned *);
+extern SEL method_getName(Method);
+extern const char *sel_getName(SEL);
+extern Class object_getClass(void *);
+extern long write(int, const void *, unsigned long);
+extern int close(int);
+extern int snprintf(char *, unsigned long, const char *, ...);
+
+/* a line to the console (what the phone's log keeps), as libredwood-tweaks does */
+static void
+note(const char *what, long long value)
+{
+	char line[200];
+	int fd = open("/dev/console", 0x20001), n = snprintf(line, sizeof(line), "x1s-storage: %s %lld%c", what, value, 10);
+
+	if (fd >= 0) {
+		write(fd, line, (unsigned long)n);
+		close(fd);
+	}
+}
 
 static int done;
 
@@ -59,53 +80,53 @@ sizes(int64_t *total, int64_t *avail)
 	return 1;
 }
 
-static int64_t (*old_total)(id, SEL), (*old_avail)(id, SEL), (*old_used)(id, SEL);
+/* STStorageSpace is made with the sizes the page shows (initWithTotal:free:purgeable:); STStorageDiskMonitor's
+ * deviceSize is the capacity line. Both get system + data and the data volume's free space. */
+static id (*old_init)(id, SEL, int64_t, int64_t, int64_t);
+static int64_t (*old_device)(id, SEL);
 
-static int64_t
-my_total(id self, SEL cmd)
+static id
+my_init(id self, SEL cmd, int64_t total, int64_t free_bytes, int64_t purgeable)
 {
 	int64_t t, a;
-	return sizes(&t, &a) ? t : old_total(self, cmd);
+
+	if (sizes(&t, &a)) {
+		note("space made, total was", total);
+		total = t;
+		free_bytes = a;
+	}
+	return old_init(self, cmd, total, free_bytes, purgeable);
 }
 
 static int64_t
-my_avail(id self, SEL cmd)
+my_device(id self, SEL cmd)
 {
 	int64_t t, a;
-	return sizes(&t, &a) ? a : old_avail(self, cmd);
-}
-
-static int64_t
-my_used(id self, SEL cmd)
-{
-	int64_t t, a;
-	return sizes(&t, &a) ? t - a : old_used(self, cmd);
+	return sizes(&t, &a) ? t : old_device(self, cmd);
 }
 
 static void
 replace(Class c, const char *name, IMP mine, void *old)
 {
-	Method m = class_getInstanceMethod(c, sel_registerName(name));
+	Method m = c ? class_getInstanceMethod(c, sel_registerName(name)) : 0;
 
 	if (m != 0) {
 		*(IMP *)old = method_setImplementation(m, mine);
 	}
+	note(name, m != 0);
 }
 
 static void
 added(const struct mach_header *mh, long slide)
 {
-	Class c;
-
 	(void)mh;
 	(void)slide;
-	if (done || (c = objc_getClass("STStorageDiskMonitor")) == 0) {
+	if (done || objc_getClass("STStorageSpace") == 0 || objc_getClass("STStorageDiskMonitor") == 0) {
 		return;
 	}
 	done = 1;
-	replace(c, "totalBytes", (IMP)my_total, &old_total);
-	replace(c, "availableBytes", (IMP)my_avail, &old_avail);
-	replace(c, "usedBytes", (IMP)my_used, &old_used);
+	replace(objc_getClass("STStorageSpace"), "initWithTotal:free:purgeable:", (IMP)my_init, &old_init);
+	replace(objc_getClass("STStorageDiskMonitor"), "deviceSize", (IMP)my_device, &old_device);
 }
 
 __attribute__((constructor)) static void

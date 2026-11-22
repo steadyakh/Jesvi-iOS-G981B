@@ -5,5 +5,5 @@ install-name:    '/usr/lib/libSystem.B.dylib'
 current-version: 1319
 exports:
   - targets:         [ arm64-ios ]
-    symbols:         [ _strcmp, _statfs, __dyld_register_func_for_add_image ]
+    symbols:         [ dyld_stub_binder, _open, _write, _close, _snprintf, _strcmp, _statfs, __dyld_register_func_for_add_image ]
 ...

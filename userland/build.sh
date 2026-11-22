@@ -760,11 +760,11 @@ if [ -d $IOS/rootfs/usr/lib ]; then
 	# and not by what select-system.py extracted here (--root-volume; seven jobs turn on the difference,
 	# fairplayd among them).
 	cp com.redwood.demo.plist com.redwood.wifi.plist com.redwood.thermald.plist com.redwood.lpmd.plist com.redwood.logd.plist com.redwood.cellular.plist root/LaunchDaemons/
-	[ ! -x root/bin/safari_favourites ] || cp com.redwood.safari-favourites.plist root/LaunchDaemons/
-	[ ! -x root/bin/redwood-defaults ] || cp com.redwood.defaults.plist root/LaunchDaemons/   # fresh-volume defaults
-	[ ! -x root/bin/trollstore_once ] || cp com.redwood.trollstore.plist root/LaunchDaemons/   # TrollStore, once
+	[ ! -f root/bin/safari_favourites ] || cp com.redwood.safari-favourites.plist root/LaunchDaemons/
+	[ ! -f root/bin/redwood-defaults ] || cp com.redwood.defaults.plist root/LaunchDaemons/   # fresh-volume defaults
+	[ ! -f root/bin/trollstore_once ] || cp com.redwood.trollstore.plist root/LaunchDaemons/   # TrollStore, once
 	cp com.redwood.account-store.plist root/LaunchDaemons/     # (the Store relay at every boot, if installed)
-	[ ! -x root/bin/redwood-motiond ] || cp com.redwood.motion-wake.plist root/LaunchDaemons/
+	[ ! -f root/bin/redwood-motiond ] || cp com.redwood.motion-wake.plist root/LaunchDaemons/
 	[ ! -x root/bin/redwood-fpd ] || cp com.redwood.fpd.plist root/LaunchDaemons/
     # Shared graphics is automatic for normal applications. GRAPHICS_COMPAT=0
     # retains the previous discovery behavior for diagnosis.
@@ -798,7 +798,7 @@ if [ -d $IOS/rootfs/usr/lib ]; then
 	fi
 	# Native USB mux services: loopback only, socket activated, no panic-on-crash policy.
 	cp com.redwood.usbmux-lockdown.plist root/LaunchDaemons/
-	[ ! -x root/bin/register_finder_host ] || cp com.redwood.finder-host.plist root/LaunchDaemons/
+	[ ! -f root/bin/register_finder_host ] || cp com.redwood.finder-host.plist root/LaunchDaemons/
 	[ -f ../jb/root/var/jb/usr/sbin/sshd ] && [ -f root/var/root/.ssh/authorized_keys ] && cp com.redwood.sshd.plist root/LaunchDaemons/
 	[ "${BT-1}" != 0 ] && cp com.apple.BlueTool.plist root/LaunchDaemons/
 	# native Touch ID: the iPhone 8's biometrickitd job (Touch ID module only); it starts when RedwoodMesa publishes

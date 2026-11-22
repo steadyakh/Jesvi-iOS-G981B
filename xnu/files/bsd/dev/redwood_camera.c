@@ -4248,8 +4248,7 @@ ios_select(unsigned index, uint32_t mode_n)
 	if (s20_real && fake && (mode_n == 5 || mode_n == 6)) {
 		uint32_t main_only = 0;
 		if (PE_parse_boot_argn("cam_s20_main_only", &main_only, sizeof(main_only)) && main_only != 0) {
-			say("camera: lens %u asked for: the rear main instead (cam_s20_main_only)
-", (unsigned)mode_n);
+			say("camera: lens %u asked for: the rear main instead (cam_s20_main_only)\n", (unsigned)mode_n);
 			mode_n = 2;
 		}
 	}

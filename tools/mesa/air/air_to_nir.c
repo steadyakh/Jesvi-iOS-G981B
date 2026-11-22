@@ -395,6 +395,36 @@ air_constant_val(struct air_ctx *c, const struct air_constant *k)
          p.pointee = k->base.type->elem;
          return air_val_ptr(c, p);
       }
+      /* older Metal compilers pass a `constexpr sampler` as its 64-bit state word made a pointer
+       * (`inttoptr (i64 <state> to %struct._sampler_t addrspace(2)*)`, TikTok's nv12_rgb_no_struct) where newer
+       * ones name a __air_sampler_state global: the same inline sampler, registered as plan_globals does */
+      if (k->expr_op == AIR_OP_CAST && k->expr_sub == AIR_CAST_INTTOPTR && k->base.type->kind == AIR_TYPE_POINTER) {
+         uint64_t word = 0;
+         if (!air_const_uint(k->operands[0], &word))
+            return air_error(c, "instruction: an inttoptr of something that is not a constant"), NULL;
+         struct air_shader_info *info = c->info;
+         unsigned next = 0;
+         for (unsigned i = 0; i < info->num_resources; i++) {
+            const struct air_resource *res = &info->resources[i];
+            if (res->kind == AIR_RESOURCE_SAMPLER && res->inline_sampler && res->sampler_state == word) {
+               struct air_ptr same = { .class = AIR_PTR_SAMPLER, .binding = res->index };
+               return air_val_ptr(c, same);
+            }
+            if (res->kind == AIR_RESOURCE_SAMPLER)
+               next = MAX2(next, res->index + 1);
+         }
+         info->resources = reralloc(c->mem_ctx, info->resources, struct air_resource, info->num_resources + 1);
+         info->resources[info->num_resources++] = (struct air_resource) {
+            .kind = AIR_RESOURCE_SAMPLER, .index = next, .read = true,
+            .param = ~0u, .name = "__air_inline_sampler",
+            .inline_sampler = true, .sampler_state = word,
+            .sampler = air_decode_sampler_state(word),
+            .raster_order_group = -1,
+            .argbuf_set = ~0u, .argbuf_id = ~0u,
+         };
+         struct air_ptr p = { .class = AIR_PTR_SAMPLER, .binding = next };
+         return air_val_ptr(c, p);
+      }
       /* a constant bitcast between numbers of one size: the same bits (NIR values carry no type) */
       if (k->expr_op == AIR_OP_CAST && k->expr_sub == AIR_CAST_BITCAST)
          return air_get(c, k->operands[0]);

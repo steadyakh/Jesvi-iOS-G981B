@@ -60,6 +60,22 @@ has(id list, id name)
 	return 0;
 }
 
+#include "X1SActionPage.h"
+
+/* Settings > Action Button, under Control Centre as on an iPhone 15 Pro: the page of X1SActionPage.h */
+static id
+action_row(id self)
+{
+	id spec = ((id (*)(id, SEL, id, id, SEL, SEL, Class, long, Class))objc_msgSend)((id)objc_getClass("PSSpecifier"),
+	    S("preferenceSpecifierNamed:target:set:get:detail:cell:edit:"), STR("Action Button"), self, 0, 0,
+	    act_page_class(), 1 /* PSLinkCell */, 0);
+	if (!spec) return 0;
+	M2(spec, "setProperty:forKey:", STR("X1S_ACTION_BUTTON"), STR("id"));
+	id icon = M1((id)objc_getClass("UIImage"), "imageWithContentsOfFile:", STR("/var/jb/Library/PreferenceLoader/X1SActionIcon.png"));
+	if (icon) M2(spec, "setProperty:forKey:", icon, STR("iconImage"));
+	return spec;
+}
+
 static id
 my_root(id self, SEL cmd)
 {
@@ -87,6 +103,19 @@ my_root(id self, SEL cmd)
 		}
 		M1(items, "addObjectsFromArray:", made);
 		added += COUNT(made);
+	}
+	/* the Action Button row, under Control Centre (or at the end) */
+	if (!has(items ? items : list, STR("Action Button"))) {
+		id row = action_row(self);
+		if (row) {
+			if (items == 0) items = M0(list, "mutableCopy");
+			size_t at = COUNT(items), k;
+			for (k = 0; k < COUNT(items); k++) {
+				id nm = M0(AT(items, k), "name");
+				if (nm && (EQ(nm, STR("Control Centre")) || EQ(nm, STR("Control Center")))) { at = k + 1; break; }
+			}
+			((void (*)(id, SEL, id, size_t))objc_msgSend)(items, S("insertObject:atIndex:"), row, at);
+		}
 	}
 	if (items == 0) return list;
 	/* stored as the others store it, with the reference counting done by KVC (the ivar directly: no setter named so) */

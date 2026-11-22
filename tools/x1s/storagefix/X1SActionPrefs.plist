@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>entry</key>
+	<dict>
+		<key>cell</key>
+		<string>PSLinkCell</string>
+		<key>label</key>
+		<string>Action Button</string>
+		<key>icon</key>
+		<string>/var/jb/Library/PreferenceLoader/Preferences/X1SActionIcon.png</string>
+	</dict>
+	<key>title</key>
+	<string>Action Button</string>
+	<key>items</key>
+	<array>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>footerText</key>
+			<string>Hold the side button to run the action. Double-press stays as it is. No Action keeps holding for Siri.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkListCell</string>
+			<key>detail</key>
+			<string>PSListItemsController</string>
+			<key>label</key>
+			<string>Action</string>
+			<key>defaults</key>
+			<string>com.x1s.actionbutton</string>
+			<key>key</key>
+			<string>action</string>
+			<key>default</key>
+			<string>none</string>
+			<key>validValues</key>
+			<array>
+				<string>silent</string>
+				<string>flashlight</string>
+				<string>camera</string>
+				<string>voicememos</string>
+				<string>magnifier</string>
+				<string>translate</string>
+				<string>screenshot</string>
+				<string>shortcut</string>
+				<string>none</string>
+			</array>
+			<key>validTitles</key>
+			<array>
+				<string>Silent Mode</string>
+				<string>Flashlight</string>
+				<string>Camera</string>
+				<string>Voice Memo</string>
+				<string>Magnifier</string>
+				<string>Translate</string>
+				<string>Screenshot</string>
+				<string>Shortcut</string>
+				<string>No Action</string>
+			</array>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Shortcut</string>
+			<key>footerText</key>
+			<string>The exact name of the shortcut to run when the action is Shortcut.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSEditTextCell</string>
+			<key>label</key>
+			<string>Name</string>
+			<key>defaults</key>
+			<string>com.x1s.actionbutton</string>
+			<key>key</key>
+			<string>shortcut</string>
+			<key>default</key>
+			<string></string>
+		</dict>
+	</array>
+</dict>
+</plist>

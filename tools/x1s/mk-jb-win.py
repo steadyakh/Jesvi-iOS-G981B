@@ -23,8 +23,8 @@ SUITE = '1800'
 SILEO = 'org.coolstar.sileo_2.5.1_iphoneos-arm64.deb'
 ELLEKIT = 'ellekit_0.4.5_iphoneos-arm64.deb'
 MIRROR = 'https://apt.procurs.us'
-# mk-jb.sh's PREINSTALL less OpenSSH (nothing on this port starts it, and there is no key for it)
-PREINSTALL = ['debianutils', 'launchctl', 'preferenceloader', 'libssl3', 'libmd0']
+# mk-jb.sh's PREINSTALL (OpenSSH: key-only login as root over Wi-Fi, keys in ssh/, never in git)
+PREINSTALL = ['debianutils', 'launchctl', 'preferenceloader', 'openssh-server', 'openssh-client', 'openssh-sftp-server', 'libssl3', 'libmd0']
 # mk-jb.sh: they read and write the kernel of a jailbroken phone through a plug-in nothing here provides
 DROP = ['shshd', 'libkrw0', 'libdimentio0']
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))

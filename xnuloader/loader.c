@@ -4839,8 +4839,8 @@ boot_logo(void)
 	menu_flush();
 }
 
-enum { MENU_BOOT, MENU_USB, MENU_DOWNLOAD, MENU_REBOOT, MENU_OFF, MENU_COUNT };
-static const char *const menu_items[MENU_COUNT] = { "Boot iOS", "Log access (USB)", "Download Mode", "Reboot", "Power off" };
+enum { MENU_BOOT, MENU_USB, MENU_TWRP, MENU_DOWNLOAD, MENU_REBOOT, MENU_OFF, MENU_COUNT };
+static const char *const menu_items[MENU_COUNT] = { "Boot iOS", "Log access (USB)", "Restart to TWRP", "Download Mode", "Reboot", "Power off" };
 
 #define MENU_TOP        980
 #define MENU_ROW        230
@@ -5507,6 +5507,10 @@ y2s_menu_loop(void)
 				banner = "iOS returned: its log is saved (Log access)";
 			}
 			console_suspect = 1;            /* (the firmware's console after a run: see put_char) */
+		} else if (choice == MENU_TWRP) {
+			/* the same as "oem recovery-mode": a reboot reason for S-Boot, nothing written to the flash */
+			menu_status("Restart to TWRP", "Restarting into recovery (TWRP)", NULL, NULL, NULL);
+			reboot_recovery();
 		} else if (choice == MENU_DOWNLOAD) {
 			menu_status("Download Mode", "Rebooting into Samsung's Download Mode", NULL, NULL, NULL);
 			reboot_download();

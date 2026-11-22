@@ -10,7 +10,27 @@ struct ax_receiver {
     unsigned failed_region,failed_offset;uint32_t failed_mask,failed_want,failed_actual;
     bool packed,cached,gw2;unsigned width,height;const volatile uint8_t *read_base;
     const char *phase;
+    bool rails_on;uint8_t rail5_was,rail6_was;  /* x1s: the CSIS PHY rails switched on here, and what they were */
 };
+extern int redwood_spmic_write(uint8_t type, uint8_t reg, uint8_t value);
+/* x1s (SM-G981B, owner's OK 2026-11-22): S-Boot leaves S2MPS22 LDO5S (0x2e, 0.85 V) and LDO6S (0x2f, 1.8 V) off, where the
+ * G980F's has them on. Only their enable bits 7:6 are set, the voltages kept as found (inside the dtbo's ranges
+ * 0.7-1.1 V and 1.6-1.95 V), each read back; ax_receiver_end puts back what was there. */
+static bool ax_rails_on(struct ax_receiver *x){
+    uint8_t r5=0,r6=0,c5=0,c6=0;
+    if(redwood_spmic_read(1,0x2e,&r5)||redwood_spmic_read(1,0x2f,&r6))return false;
+    if((r5&0xc0)==0xc0&&(r6&0xc0)==0xc0)return true;
+    if((r5&0x3f)!=0x0c||(r6&0x3f)!=0x2c)return false;   /* only the voltages measured on this phone (0.85 V, 1.8 V) */
+    x->rail5_was=r5;x->rail6_was=r6;x->rails_on=true;
+    if(redwood_spmic_write(1,0x2e,r5|0xc0)||redwood_spmic_read(1,0x2e,&c5)||c5!=(r5|0xc0))return false;
+    if(redwood_spmic_write(1,0x2f,r6|0xc0)||redwood_spmic_read(1,0x2f,&c6)||c6!=(r6|0xc0))return false;
+    cam_s20_wait_ms(2);
+    return true;
+}
+static void ax_rails_restore(struct ax_receiver *x){
+    if(!x->rails_on)return;
+    (void)redwood_spmic_write(1,0x2f,x->rail6_was);(void)redwood_spmic_write(1,0x2e,x->rail5_was);x->rails_on=false;
+}
 static unsigned ax_offset(const struct ax_receiver *x,unsigned r,unsigned off){
     return x->gw2&&r==AX_DMA&&off>=0x1000&&off<0x1500?off+0x3000:off;
 }
@@ -37,6 +57,7 @@ static bool ax_receiver_begin_sensor(struct ax_receiver *x,bool packed,unsigned 
     for(unsigned i=0;i<AX_REGIONS;i++){x->bank[i]=(volatile uint8_t *)cam_s20_io_map(gw2&&i==AX_CSI?0x17050000:gw2&&i==AX_PHY?0x170d1b00:gw2&&i==AX_MUX?0x17020420:physical[i],lengths[i]);if(!x->bank[i])return false;}
     x->phase="CSIS domain/PHY rail prerequisites";
     if(!(ax_rd(x,AX_PMU,0x1d84)&1U))return false;
+    if(!ax_rails_on(x))return false;
     uint8_t rail5=0,rail6=0;
     if(redwood_spmic_read(1,0x2e,&rail5)||redwood_spmic_read(1,0x2f,&rail6)||!(rail5&0xc0)||!(rail6&0xc0))return false;
     if(cam_s20_smc4(SMC_PREPARE_PD_ONOFF,1,CSIS_NEED_SMC,2))return false;
@@ -179,6 +200,7 @@ static bool ax_receiver_end(struct ax_receiver *x){
     if(!ax_jrestore(&x->journal,x->io))clean=false;
     if(x->bank[AX_TOP]&&(!ax_wait_clock(x,0x104c)||!ax_wait_clock(x,0x1848)))clean=false;
     if(x->allocated){redwood_camera_dma_put();x->allocated=false;}
+    ax_rails_restore(x);
     return clean;
 }
 

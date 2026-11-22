@@ -799,7 +799,7 @@ if [ -d $IOS/rootfs/usr/lib ]; then
 	# Native USB mux services: loopback only, socket activated, no panic-on-crash policy.
 	cp com.redwood.usbmux-lockdown.plist root/LaunchDaemons/
 	[ ! -x root/bin/register_finder_host ] || cp com.redwood.finder-host.plist root/LaunchDaemons/
-	[ -x ../jb/root/var/jb/usr/sbin/sshd ] && [ -f root/var/root/.ssh/authorized_keys ] && cp com.redwood.sshd.plist root/LaunchDaemons/
+	[ -f ../jb/root/var/jb/usr/sbin/sshd ] && [ -f root/var/root/.ssh/authorized_keys ] && cp com.redwood.sshd.plist root/LaunchDaemons/
 	[ "${BT-1}" != 0 ] && cp com.apple.BlueTool.plist root/LaunchDaemons/
 	# native Touch ID: the iPhone 8's biometrickitd job (Touch ID module only); it starts when RedwoodMesa publishes
 	# AppleBiometricServices, i.e. only with touchid=1 (redwood-fpd). Needs libBKDM1 in the system image.

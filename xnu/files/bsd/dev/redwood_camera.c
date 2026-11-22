@@ -4242,6 +4242,17 @@ ios_select(unsigned index, uint32_t mode_n)
 	 * the next session -- 0 the full 3648x2736, 1 the 2x2-binned 1824x1368 (a quarter of the data: the preview
 	 * and video without the phone at 95 C and half its clock, 2026-11-12); ~0 keeps what there is.
 	 */
+	/* x1s (SM-G981B): cam_s20_main_only=1 sends the ultra-wide (5, 2LA) and the tele (6, GW2) to the rear main: on this
+	 * phone their receiver gives no frames and its DMA abort goes unacknowledged, which blocks the camera until a restart
+	 * (2026-11-22); the main S5K2LD streams. Zoom stays a crop of the main. */
+	if (s20_real && fake && (mode_n == 5 || mode_n == 6)) {
+		uint32_t main_only = 0;
+		if (PE_parse_boot_argn("cam_s20_main_only", &main_only, sizeof(main_only)) && main_only != 0) {
+			say("camera: lens %u asked for: the rear main instead (cam_s20_main_only)
+", (unsigned)mode_n);
+			mode_n = 2;
+		}
+	}
 	if (s20_real && fake && mode_n <= 6) {
 		/* mode 2: the rear main (S5K2LD) instead of the front, asked for by libredwood-media's Back Camera */
 		s20_gw2_now=mode_n==6;redwood_camera_s20_set_gw2(s20_gw2_now);

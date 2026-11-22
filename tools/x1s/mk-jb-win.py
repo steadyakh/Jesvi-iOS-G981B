@@ -342,13 +342,14 @@ def main():
 
     # the G981B's own tweak for Settings' storage page (tools/x1s/storagefix; built there first)
     fix = os.path.join(ROOT, 'tools', 'x1s', 'storagefix')
-    if os.path.exists(os.path.join(fix, 'X1SStorageFix.dylib')):
-        for name, mode in (('X1SStorageFix.dylib', 0o755), ('X1SStorageFix.plist', 0o644)):
+    for tweak in ('X1SStorageFix', 'X1SPanes'):
+        if not os.path.exists(os.path.join(fix, tweak + '.dylib')):
+            print('mk-jb-win.py: no tools/x1s/storagefix/%s.dylib (its build): not shipped' % tweak)
+            continue
+        for name, mode in ((tweak + '.dylib', 0o755), (tweak + '.plist', 0o644)):
             rel = 'usr/lib/TweakInject/' + name
             shutil.copyfile(os.path.join(fix, name), os.path.join(JB, *rel.split('/')))
             manifest[rel] = '%o\t0\t0\t%s' % (stat.S_IFREG | mode, rel)
-    else:
-        print('mk-jb-win.py: no tools/x1s/storagefix/X1SStorageFix.dylib (its build.sh): the storage page stays wrong')
 
     # prep.sh, and this image's database beside it for prep.sh to put in place of a broken one on the phone
     write_file(manifest, 'prep.sh', PREP, 0o755)

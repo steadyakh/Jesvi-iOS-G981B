@@ -8,3 +8,9 @@ B=${LLVM:-/e/s20-work/llvm/bin}
 	-install_name /var/jb/usr/lib/TweakInject/X1SStorageFix.dylib -adhoc_codesign X1SStorageFix.o -o X1SStorageFix.dylib
 rm -f X1SStorageFix.o
 echo "storagefix: $(pwd)/X1SStorageFix.dylib"
+# X1SPanes.dylib: the tweaks' rows in Settings (see X1SPanes.c)
+"$B/clang.exe" -target arm64-apple-ios14.0 -O2 -fno-stack-protector -ffreestanding -c X1SPanes.c -o X1SPanes.o
+"$B/lld.exe" -flavor darwin -arch arm64 -platform_version ios 14.0 16.5 -no_fixup_chains -dylib panes-libSystem.tbd panes-libobjc.tbd \
+	-install_name /var/jb/usr/lib/TweakInject/X1SPanes.dylib -adhoc_codesign X1SPanes.o -o X1SPanes.dylib
+rm -f X1SPanes.o
+echo "storagefix: $(pwd)/X1SPanes.dylib"

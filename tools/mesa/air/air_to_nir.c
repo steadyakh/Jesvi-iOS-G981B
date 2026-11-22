@@ -384,8 +384,19 @@ air_constant_val(struct air_ctx *c, const struct air_constant *k)
       /* with opaque pointers the only constant expression left in the corpus
        * is a pointer bitcast, which is the pointer itself
        */
-      if (k->expr_op == AIR_OP_CAST && k->expr_sub == AIR_CAST_BITCAST &&
-          k->base.type->kind == AIR_TYPE_POINTER)
+      if (k->expr_op == AIR_OP_CAST && (k->expr_sub == AIR_CAST_BITCAST || k->expr_sub == AIR_CAST_ADDRSPACECAST) &&
+          k->base.type->kind == AIR_TYPE_POINTER) {
+         /* older bitcode (typed pointers) also casts pointers between address spaces and pointee types in
+          * constants -- TikTok's nv12_rgb_no_struct: the pointer itself, pointing at the new pointee */
+         struct air_val *v = air_get(c, k->operands[0]);
+         if (!v || v->kind != AIR_VAL_PTR || !k->base.type->elem)
+            return v;
+         struct air_ptr p = v->ptr;
+         p.pointee = k->base.type->elem;
+         return air_val_ptr(c, p);
+      }
+      /* a constant bitcast between numbers of one size: the same bits (NIR values carry no type) */
+      if (k->expr_op == AIR_OP_CAST && k->expr_sub == AIR_CAST_BITCAST)
          return air_get(c, k->operands[0]);
       /* ... and a constant getelementptr, which the GL-on-Metal vertex shaders
        * use to name the first element of a module array
@@ -437,7 +448,7 @@ air_constant_val(struct air_ctx *c, const struct air_constant *k)
             p = air_ptr_add(c, p, nir_imm_int(&c->b, off));
          return air_val_ptr(c, p);
       }
-      return air_error(c, "instruction: constant expression %u", k->expr_op), NULL;
+      return air_error(c, "instruction: constant expression %u (cast kind %u)", k->expr_op, k->expr_sub), NULL;
    }
    return air_error(c, "instruction: constant kind %u", k->ckind), NULL;
 }

@@ -98,7 +98,18 @@ render_async_options(id self, SEL cmd, id desc, unsigned long options, struct bl
 	id pso = ((id (*)(id, SEL, id, unsigned long, id *, id *))objc_msgSend)(self,
 	    sel_registerName("newRenderPipelineStateWithDescriptor:options:reflection:error:"), desc, options, options ? &refl : 0, &error);
 	(void)cmd;
-	if (!pso) { if (!error) error = make_error("render pipeline not supported here"); say_failure("render pipeline", error); }
+	if (!pso) {
+		char what[300];
+		id vf = desc ? ((id (*)(id, SEL))objc_msgSend)(desc, sel_registerName("vertexFunction")) : 0;
+		id ff = desc ? ((id (*)(id, SEL))objc_msgSend)(desc, sel_registerName("fragmentFunction")) : 0;
+		id vn = vf ? ((id (*)(id, SEL))objc_msgSend)(vf, sel_registerName("name")) : 0;
+		id fn = ff ? ((id (*)(id, SEL))objc_msgSend)(ff, sel_registerName("name")) : 0;
+		const char *vc = vn ? ((const char *(*)(id, SEL))objc_msgSend)(vn, sel_registerName("UTF8String")) : 0;
+		const char *fc = fn ? ((const char *(*)(id, SEL))objc_msgSend)(fn, sel_registerName("UTF8String")) : 0;
+		snprintf(what, sizeof(what), "render pipeline (vertex %s, fragment %s)", vc ? vc : "-", fc ? fc : "-");
+		if (!error) error = make_error("render pipeline not supported here");
+		say_failure(what, error);
+	}
 	{
 		static int told;
 		if (told++ < 3) {

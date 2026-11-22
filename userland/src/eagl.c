@@ -2843,6 +2843,46 @@ group_draw_end(struct eagl *e, const GLint enabled[4])
 	glUseProgram(e->program);
 }
 
+/*
+ * x1s (2026-11-22): the blur behind Control Centre, the App Library and folders came out in blocks. CoreAnimation's
+ * OpenGL ES renderer makes it with "ds8" (eight times smaller) and then draws that picture back at full size with no
+ * blur passes between (the census: ds8, vcm, c4p; no db2/db4/nb*): read with nearest filtering, every texel is an
+ * 8x8 block. The pictures ds8 draws into are remembered, and read with linear filtering wherever they are used, so
+ * the enlargement is smooth -- what the blur passes would have given, near enough at an eighth of the size.
+ */
+static GLuint ds8_target[16];
+static unsigned ds8_targets;
+
+static void
+ds8_remember(GLuint texture)
+{
+	for (unsigned i = 0; i < ds8_targets; i++)
+		if (ds8_target[i] == texture)
+			return;
+	ds8_target[ds8_targets++ % 16] = texture;
+	if (ds8_targets > 16)
+		ds8_targets = 16;
+}
+
+static void
+ds8_smooth(struct eagl *e)
+{
+	for (GLuint u = 0; u < 2; u++) {
+		GLuint t = e->bound[u];
+		if (t == 0)
+			continue;
+		for (unsigned i = 0; i < ds8_targets; i++) {
+			if (ds8_target[i] != t)
+				continue;
+			glActiveTexture(GL_TEXTURE0 + u);
+			glTexParameteri(GL_TEXTURE_2D, 0x2801, 0x2601);         /* min filter: linear */
+			glTexParameteri(GL_TEXTURE_2D, 0x2800, 0x2601);         /* mag filter: linear */
+			glActiveTexture(GL_TEXTURE0 + e->unit);
+			break;
+		}
+	}
+}
+
 static bool
 plain_draw_begin(struct eagl *e, GLint enabled[4])
 {
@@ -2851,6 +2891,9 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 	unsigned function = ca_context != NULL ? *(*(uint8_t **)((char *)ca_context + 0x10) + 0x10) : 90;      /* (90: not known yet) */
 	GLint rows = 0;
 	GLuint program;
+
+	if (ds8_targets)
+		ds8_smooth(e);
 
 	if (e->program == 0) {
 		e->line.vrd += function == FUNCTION_VARIABLE_DOWNSAMPLE;
@@ -2968,6 +3011,8 @@ plain_draw_begin(struct eagl *e, GLint enabled[4])
 			e->box_places = glGetUniformLocation(e->box, "places");
 		}
 		census_draw(e, function, CENSUS_BOX);
+		if (e->colour)
+			ds8_remember(e->colour);
 		glUseProgram(e->box);
 		glUniformMatrix4fv(e->box_matrix, 1, 0, e->matrix != NULL ? e->matrix : identity);
 		glUniform2fv(e->box_places, 4, function_values[function]);

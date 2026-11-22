@@ -1790,6 +1790,18 @@ cam_s20_phy_update(volatile uint8_t *bank, uint32_t offset, uint32_t mask, uint3
     cam_s20_phy_wr(bank, offset, (cam_s20_rd(bank, offset) & ~mask) | (value & mask), pace_us);
 }
 
+/* x1s: the front link's settle count and settle_clk_sel, tried live (cam.s20.front.settle N [clksel]): the G981B's
+ * SAK3J1 writes ~47 lines into WDMA1 and stops with an error at Samsung's 1807 Mbps values (2026-11-22). 0: keep 9. */
+static uint32_t cam_s20_front_settle, cam_s20_front_clksel;
+static void
+cam_s20_front_settle_cmd(const uint64_t *v, unsigned n, char *out, size_t cap)
+{
+	if (n >= 1) cam_s20_front_settle = (uint32_t)v[0] & 0xff;
+	if (n >= 2) cam_s20_front_clksel = (uint32_t)v[1] & 1;
+	(void)snprintf(out, cap, "cam.s20.front.settle: %u (0 = Samsung's 9), settle_clk_sel %u, from the next front start\n",
+	    cam_s20_front_settle, cam_s20_front_clksel);
+}
+
 static void
 cam_s20_dphy_3j1_config(volatile uint8_t *dphy, volatile uint8_t *bias, unsigned pace_us)
 {
@@ -1822,8 +1834,8 @@ cam_s20_dphy_3j1_config(volatile uint8_t *dphy, volatile uint8_t *bias, unsigned
         cam_s20_phy_update(dphy, i * 0x100 + 0x0010, 3U << 8, 3U << 8, pace_us);
         cam_s20_phy_wr(dphy, b + 0x0014, 0x8680, pace_us);
         cam_s20_phy_wr(dphy, b + 0x0018, 0x4000, pace_us);
-        cam_s20_phy_update(dphy, b + 0x0030, 0xffU, 9, pace_us);
-		cam_s20_phy_update(dphy, b + 0x0030, 1U << 8, 0, pace_us); /* settle_clk_sel=0 at 1807 Mbps */
+        cam_s20_phy_update(dphy, b + 0x0030, 0xffU, cam_s20_front_settle ? cam_s20_front_settle : 9, pace_us);
+		cam_s20_phy_update(dphy, b + 0x0030, 1U << 8, cam_s20_front_clksel << 8, pace_us); /* settle_clk_sel=0 at 1807 Mbps */
         cam_s20_phy_wr(dphy, b + 0x0034, 3, pace_us);
 		cam_s20_phy_update(dphy, b + 0x0040, 1U, 1U, pace_us); /* skew_cal_en=1 at >=1500 Mbps */
         cam_s20_phy_wr(dphy, b + 0x0050, 0x81a, pace_us);
@@ -3258,6 +3270,7 @@ redwood_exynos_camera_s20_init(void)
 	redwood_dbgport_add("cam.s20.2la.id", ": cold/idle-only bounded 2LA identity read; rails/pins/clocks restored, no streaming", cam_s20_2la_identify);
 	redwood_dbgport_add("cam.s20", ": read-only S20 camera pin inventory; no writes", cam_s20_inventory);
 	redwood_dbgport_add("cam.s20.id", " [1]: one-shot rear S5K2LD model/revision read (1: then its tables, ~0.5 s of streaming read by its frame counter); rails and pins restored", cam_s20_identify);
+	redwood_dbgport_add("cam.s20.front.settle", " N [clksel]: the front D-PHY settle count (0: Samsung's 9) and settle_clk_sel, tried from the next front start", cam_s20_front_settle_cmd);
 	redwood_dbgport_add("cam.s20.front.id", ": one-shot front SAK3J1 model/revision read; camera rail enable bits and pins are restored", cam_s20_front_identify);
 	redwood_dbgport_add("cam.s20.dma.test", ": [0|1|2 [sensor-mode]]: bounded DMA capture, 0 hardware pattern, 1 front sensor, 2 rear main (one 2016x1512 frame); refuses busy DMA", cam_s20_dma_pattern);
 	redwood_dbgport_add("cam.s20.csis1", ": read-only CSIS1 and DMA1 version/status/counter snapshot", cam_s20_csis_inventory);

@@ -1296,7 +1296,14 @@ cam_s20_dma_pattern(const uint64_t *v, unsigned n, char *out, size_t cap)
 		}
 	}
 	vc = dma + (rear ? 0x3000 : 0x2000); cmn = dma + (rear ? 0x3400 : 0x2400);
-	if (cam_s20_rd(cmn, 8)) { phase = "DMA has pending interrupts"; goto report; }
+	/* x1s: a stop that was not acknowledged leaves its write-1-to-clear sources set (the clearing below is skipped on that
+	 * path), and every later session refused here until a restart (zoom in Camera, 2026-11-22). Every WDMA is idle by
+	 * the check above: the stale sources are cleared, and only sources that stay set refuse. */
+	if (cam_s20_rd(cmn, 8)) {
+		cam_s20_wr(cmn, 8, cam_s20_rd(cmn, 8));
+		if (cam_s20_rd(cmn, 8)) { phase = "DMA has pending interrupts"; goto report; }
+		printf("camera: stale DMA interrupt sources cleared (idle)\n");
+	}
 	if (!redwood_camera_dma_get(total, &phys, &buffer)) { phase = "no free low-memory slot"; goto report; }
 	allocated = true;
 	if (optical) {
@@ -1377,7 +1384,7 @@ cam_s20_dma_pattern(const uint64_t *v, unsigned n, char *out, size_t cap)
 	cam_s20_wr(dma, 0x20, cam_s20_rd(dma, 0x20) & ~(1U << 31));
 	cam_s20_wr(vc, 0, 0);
 	cam_s20_wr(cmn, 0x14, cmn_save[2] | 1U); /* drain any writes before returning memory */
-	for (i = 0; i < 100; i++) {
+	for (i = 0; i < 300; i++) {      /* x1s: up to 300 ms (100 was often too short on the G981B) */
 		uint32_t status = cam_s20_rd(cmn, 8);
 		active = cam_s20_rd(vc, 0x90);
 		if ((status & (1U << 16)) && !(active & 1U)) { stopped = true; break; }

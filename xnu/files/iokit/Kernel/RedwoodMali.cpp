@@ -819,8 +819,7 @@ RedwoodMaliUserClient::submit(struct drm_panfrost_submit * request, size_t size)
 			uint32_t n = gSubStat.submits;
 
 			IOLog("RedwoodMali: submits: %u in %llu ms; each: lock %llu us, cache clean %llu us (%u surfaces, %llu KB in "
-			    "the 5 s), queue %llu us, reap %llu us
-", n, subMicros(t4 - gSubStat.since) / 1000,
+			    "the 5 s), queue %llu us, reap %llu us\n", n, subMicros(t4 - gSubStat.since) / 1000,
 			    subMicros(gSubStat.lock) / n, subMicros(gSubStat.clean) / n, gSubStat.cleans, gSubStat.bytes / 1024,
 			    subMicros(gSubStat.queue) / n, subMicros(gSubStat.reap) / n);
 			bzero(&gSubStat, sizeof(gSubStat));

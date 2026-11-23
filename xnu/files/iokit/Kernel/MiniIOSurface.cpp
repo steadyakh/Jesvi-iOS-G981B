@@ -1165,7 +1165,7 @@ public:
 	virtual IOReturn externalMethod(uint32_t selector, IOExternalMethodArguments * args,
 	    IOExternalMethodDispatch * dispatch, OSObject * target, void * reference) APPLE_KEXT_OVERRIDE;
 	IOReturn externalMethodUntimed(uint32_t selector, IOExternalMethodArguments * args,
-	    IOExternalMethodDispatch * dispatch, OSObject * target, void * reference) APPLE_KEXT_OVERRIDE;
+	    IOExternalMethodDispatch * dispatch, OSObject * target, void * reference);
 	virtual IOExternalTrap * getTargetAndTrapForIndex(IOService ** targetP, UInt32 index) APPLE_KEXT_OVERRIDE;
 	static mach_port_name_t makeSendRight(task_t task, MiniIOSurface * surface);
 };
@@ -1887,8 +1887,7 @@ IOSurfaceRootUserClient::externalMethod(uint32_t selector, IOExternalMethodArgum
 			at += snprintf(line + at, sizeof(line) - at, " %d %u/%u %llu", best, gSurfStat.calls[best],
 			    gSurfStat.fails[best], ns / 1000);
 		}
-		IOLog("%s
-", line);
+		IOLog("%s\n", line);
 		bzero(gSurfStat.time, sizeof(gSurfStat.time));
 		bzero(gSurfStat.calls, sizeof(gSurfStat.calls));
 		bzero(gSurfStat.fails, sizeof(gSurfStat.fails));

@@ -1391,6 +1391,10 @@ IOSurfaceRootUserClient::methodWrapClientImage(IOExternalMethodArguments * args)
 	}
 	s = surfaceCreate(props, &ret);
 	props->release();
+	if (s != NULL && s->values != NULL) {
+		/* a picture's memory (a CGImage's: never written again): eagl.c need not add it up every frame */
+		s->values->setObject("RedwoodStill", kOSBooleanTrue);
+	}
 	if (s == NULL) {
 		if (said < 16) {
 			said++;

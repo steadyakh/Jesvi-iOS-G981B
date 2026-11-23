@@ -238,6 +238,7 @@ struct image {
 	bool painted;                   /* something has been drawn into it (it is a target in fact, not only in name) */
 	unsigned looked;                /* ... the frame in which that memory was last looked at, */
 	uint64_t sum;                   /* ... and what it added up to */
+	bool still;                     /* a surface around a picture (IOSurfaceClientWrapClientImage, "RedwoodStill"): never added up */
 	GLenum to, internal, format, type;
 	uint32_t plane, seed;
 	GLsizei width, height;
@@ -547,6 +548,15 @@ image_new(struct eagl *e, GLuint texture, IOSurfaceRef surface)
 	memset(image, 0, sizeof(*image));
 	image->texture = texture;
 	image->surface = (IOSurfaceRef)CFRetain(surface);
+	{
+		/* the kernel marks the surfaces it made around a CGImage's memory, which is not written again */
+		CFTypeRef still = IOSurfaceCopyValue(surface, CFSTR("RedwoodStill"));
+
+		if (still != NULL) {
+			image->still = true;
+			CFRelease(still);
+		}
+	}
 	return image;
 }
 
@@ -659,7 +669,7 @@ surface_changed(struct eagl *e, struct image *image)
 	const uint8_t *base = IOSurfaceGetBaseAddress(surface);
 	uint64_t sum = size, word;
 
-	if (image->looked == e->frames + 1 || base == NULL || IOSurfaceGetPlaneCount(surface) > 0) {
+	if (image->still || image->looked == e->frames + 1 || base == NULL || IOSurfaceGetPlaneCount(surface) > 0) {
 		return false;
 	}
 	image->looked = e->frames + 1;

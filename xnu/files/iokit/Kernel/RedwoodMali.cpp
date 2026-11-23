@@ -716,9 +716,31 @@ RedwoodMaliUserClient::surfaceBuffer(struct redwood_surface * request)
 	return kIOReturnSuccess;
 }
 
+/*
+ * Where SUBMIT's time goes (x1s, 23 Nov: backboardd's drawing thread spent ~19 % of its time inside this call while
+ * home screen pages were swiped). Every 5 s with submits: how many, and the microseconds each spent waiting for the
+ * lock, cleaning IOSurfaces out of the processor's cache (and how much), queueing the job, and reaping. Boot-arg
+ * mali_substat=0 turns the line off.
+ */
+static struct {
+	uint64_t since, lock, clean, queue, reap, bytes;
+	uint32_t submits, cleans, surfaces;
+} gSubStat;
+static int gSubStatOn = -1;
+
+static uint64_t
+subMicros(uint64_t abs)
+{
+	uint64_t ns;
+
+	absolutetime_to_nanoseconds(abs, &ns);
+	return ns / 1000;
+}
+
 IOReturn
 RedwoodMaliUserClient::submit(struct drm_panfrost_submit * request, size_t size)
 {
+	uint64_t t0, t1, t2, t3, t4;
 	uint32_t * handles = NULL;
 	uint32_t count = request->bo_handle_count;
 	uint64_t fence;
@@ -737,7 +759,9 @@ RedwoodMaliUserClient::submit(struct drm_panfrost_submit * request, size_t size)
 			return kIOReturnVMError;
 		}
 	}
+	t0 = mach_absolute_time();
 	IOLockLock(gMaliLock);
+	t1 = mach_absolute_time();
 	/* IOSurfaces: out of this processor's cache when somebody has said they changed, and always the first time */
 	for (uint32_t i = 0; i < count; i++) {
 		struct mali_buffer * b = buffer(handles[i]);
@@ -748,11 +772,15 @@ RedwoodMaliUserClient::submit(struct drm_panfrost_submit * request, size_t size)
 			if (seed != b->seed || b->fence == 0) {
 				b->seed = seed;
 				redwood_mali_to_memory(b->kernel, b->size);
+				gSubStat.cleans++;
+				gSubStat.bytes += b->size;
 			}
 		}
 	}
 	redwood_mali_to_memory(NULL, 0);                /* (and the program's writes to memory first: a barrier) */
+	t2 = mach_absolute_time();
 	fence = redwood_mali_submit(request->jc, request->requirements);
+	t3 = mach_absolute_time();
 	if (fence != 0) {
 		for (uint32_t i = 0; i < count; i++) {
 			struct mali_buffer * b = buffer(handles[i]);
@@ -772,6 +800,32 @@ RedwoodMaliUserClient::submit(struct drm_panfrost_submit * request, size_t size)
 		}
 	}
 	reap(false);
+	t4 = mach_absolute_time();
+	if (gSubStatOn < 0) {
+		uint32_t on = 1;
+
+		PE_parse_boot_argn("mali_substat", &on, sizeof(on));
+		gSubStatOn = on != 0;
+	}
+	if (gSubStatOn) {
+		gSubStat.submits++;
+		gSubStat.lock += t1 - t0;
+		gSubStat.clean += t2 - t1;
+		gSubStat.queue += t3 - t2;
+		gSubStat.reap += t4 - t3;
+		if (gSubStat.since == 0) {
+			gSubStat.since = t0;
+		} else if (subMicros(t4 - gSubStat.since) >= 5000000) {
+			uint32_t n = gSubStat.submits;
+
+			IOLog("RedwoodMali: submits: %u in %llu ms; each: lock %llu us, cache clean %llu us (%u surfaces, %llu KB in "
+			    "the 5 s), queue %llu us, reap %llu us
+", n, subMicros(t4 - gSubStat.since) / 1000,
+			    subMicros(gSubStat.lock) / n, subMicros(gSubStat.clean) / n, gSubStat.cleans, gSubStat.bytes / 1024,
+			    subMicros(gSubStat.queue) / n, subMicros(gSubStat.reap) / n);
+			bzero(&gSubStat, sizeof(gSubStat));
+		}
+	}
 	if (fSubmits++ < 4) {
 		IOLog("RedwoodMali: job %llu: chain %#llx, %u buffers, requirements %#x\n", fence, request->jc, count,
 		    request->requirements);

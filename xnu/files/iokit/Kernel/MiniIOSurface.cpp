@@ -26,6 +26,8 @@
 #include <libkern/c++/OSString.h>
 #include <libkern/c++/OSSymbol.h>
 #include <kern/thread_call.h>
+#include <kern/clock.h>
+#include <mach/mach_time.h>
 #include <sys/systm.h>
 #include <sys/proc.h>
 
@@ -1162,6 +1164,8 @@ public:
 	virtual void free(void) APPLE_KEXT_OVERRIDE;
 	virtual IOReturn externalMethod(uint32_t selector, IOExternalMethodArguments * args,
 	    IOExternalMethodDispatch * dispatch, OSObject * target, void * reference) APPLE_KEXT_OVERRIDE;
+	IOReturn externalMethodUntimed(uint32_t selector, IOExternalMethodArguments * args,
+	    IOExternalMethodDispatch * dispatch, OSObject * target, void * reference) APPLE_KEXT_OVERRIDE;
 	virtual IOExternalTrap * getTargetAndTrapForIndex(IOService ** targetP, UInt32 index) APPLE_KEXT_OVERRIDE;
 	static mach_port_name_t makeSendRight(task_t task, MiniIOSurface * surface);
 };
@@ -1820,8 +1824,80 @@ IOSurfaceRootUserClient::methodSetBulkAttachments(const uint8_t * in, size_t inS
 	return ret;
 }
 
+/*
+ * Which requests the window server's drawing makes, how often and how long they take (x1s, 23 Nov: backboardd's
+ * drawing thread was inside this user client ~10 % of the time while home screen pages were swiped, most of it in
+ * IOSurfaceClientWrapClientImage's request, which is not implemented here). Every 5 s: the four costliest
+ * selectors. Boot-arg surf_stat=0 turns the line off.
+ */
+static struct {
+	uint64_t since, time[64];
+	uint32_t calls[64], fails[64];
+} gSurfStat;
+static int gSurfStatOn = -1;
+
 IOReturn
 IOSurfaceRootUserClient::externalMethod(uint32_t selector, IOExternalMethodArguments * args,
+    IOExternalMethodDispatch * dispatch, OSObject * target, void * reference)
+{
+	uint64_t t0 = mach_absolute_time(), t1, ns;
+	IOReturn ret = externalMethodUntimed(selector, args, dispatch, target, reference);
+
+	if (gSurfStatOn < 0) {
+		uint32_t on = 1;
+
+		PE_parse_boot_argn("surf_stat", &on, sizeof(on));
+		gSurfStatOn = on != 0;
+	}
+	if (!gSurfStatOn || selector >= 64) {
+		return ret;
+	}
+	t1 = mach_absolute_time();
+	gSurfStat.calls[selector]++;              /* (racy: a figure, not an account) */
+	gSurfStat.time[selector] += t1 - t0;
+	if (ret != kIOReturnSuccess) {
+		gSurfStat.fails[selector]++;
+	}
+	if (gSurfStat.since == 0) {
+		gSurfStat.since = t0;
+		return ret;
+	}
+	absolutetime_to_nanoseconds(t1 - gSurfStat.since, &ns);
+	if (ns >= 5ULL * NSEC_PER_SEC) {
+		char line[400];
+		size_t at = 0;
+		bool used[64] = { false };
+
+		gSurfStat.since = t1;
+
+		at += snprintf(line, sizeof(line), "MiniIOSurface: requests in %llu ms (selector calls/failed total-us):", ns / NSEC_PER_MSEC);
+		for (int k = 0; k < 5; k++) {
+			int best = -1;
+
+			for (int i = 0; i < 64; i++) {
+				if (!used[i] && gSurfStat.calls[i] != 0 && (best < 0 || gSurfStat.time[i] > gSurfStat.time[best])) {
+					best = i;
+				}
+			}
+			if (best < 0) {
+				break;
+			}
+			used[best] = true;
+			absolutetime_to_nanoseconds(gSurfStat.time[best], &ns);
+			at += snprintf(line + at, sizeof(line) - at, " %d %u/%u %llu", best, gSurfStat.calls[best],
+			    gSurfStat.fails[best], ns / 1000);
+		}
+		IOLog("%s
+", line);
+		bzero(gSurfStat.time, sizeof(gSurfStat.time));
+		bzero(gSurfStat.calls, sizeof(gSurfStat.calls));
+		bzero(gSurfStat.fails, sizeof(gSurfStat.fails));
+	}
+	return ret;
+}
+
+IOReturn
+IOSurfaceRootUserClient::externalMethodUntimed(uint32_t selector, IOExternalMethodArguments * args,
     IOExternalMethodDispatch * dispatch, OSObject * target, void * reference)
 {
 	const uint8_t * in = (const uint8_t *) args->structureInput;

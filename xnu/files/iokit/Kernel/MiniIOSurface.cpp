@@ -1140,6 +1140,7 @@ class IOSurfaceRootUserClient : public IOUserClient
 
 	IOReturn methodInit(IOExternalMethodArguments * args);
 	IOReturn methodCreate(IOExternalMethodArguments * args);
+	IOReturn methodWrapClientImage(IOExternalMethodArguments * args);
 	IOReturn methodLookup(IOExternalMethodArguments * args);
 	IOReturn methodLookupFromPort(IOExternalMethodArguments * args);
 	IOReturn methodCreatePort(IOExternalMethodArguments * args);
@@ -1322,6 +1323,90 @@ IOSurfaceRootUserClient::returnSurface(struct minisurf_client_ref * ref, bool kn
 	    ref->pixelMap != NULL ? ref->pixelMap->getAddress() : s->clientAddress;
 	args->structureOutputSize = size;
 	return kIOReturnSuccess;
+}
+
+/*
+ * IOSurfaceClientWrapClientImage (selector 6): a surface around a picture the client has in memory, as
+ * IOSurfaceAddress does for create. CoreAnimation asks for one for every picture it draws (x1s, 23 Nov: ~3,400 a
+ * second while home screen pages were swiped, every one refused here before, and each request is a trip into the
+ * kernel). The request (IOSurface 16.5, read from its caller): address, width, height, pixel format, bytes per
+ * element (worked out by the caller from the format), bytes per row and one more word, said for the first few.
+ * Boot-arg surf_wrap=0 refuses them again.
+ */
+struct minisurf_wrap_request {
+	uint64_t address;
+	uint32_t width, height, pixelFormat, bytesPerElement, bytesPerRow, other;
+};
+
+static int gSurfaceWrapOn = -1;
+
+IOReturn
+IOSurfaceRootUserClient::methodWrapClientImage(IOExternalMethodArguments * args)
+{
+	const struct minisurf_wrap_request * w = (const struct minisurf_wrap_request *) args->structureInput;
+	static uint32_t said;
+	OSDictionary * props;
+	MiniIOSurface * s;
+	struct minisurf_client_ref * ref;
+	IOReturn ret = kIOReturnUnsupported;
+	uint64_t alloc;
+
+	if (gSurfaceWrapOn < 0) {
+		uint32_t on = 1;
+
+		PE_parse_boot_argn("surf_wrap", &on, sizeof(on));
+		gSurfaceWrapOn = on != 0;
+	}
+	if (!gSurfaceWrapOn) {
+		return kIOReturnUnsupported;
+	}
+	if (w == NULL || args->structureInputSize < sizeof(*w) || w->address == 0 || w->width == 0 || w->height == 0 ||
+	    w->bytesPerRow < w->width * w->bytesPerElement) {
+		return kIOReturnBadArgument;
+	}
+	alloc = (uint64_t) w->bytesPerRow * w->height;
+	if (said < 8) {
+		said++;
+		IOLog("MiniIOSurface: wrap %ux%u '%.4s' %u bytes per element, %u per row, other %#x, at %#llx\n", w->width,
+		    w->height, (const char *) &w->pixelFormat, w->bytesPerElement, w->bytesPerRow, w->other, w->address);
+	}
+	if (alloc > 256ULL * 1024 * 1024 || (props = OSDictionary::withCapacity(7)) == NULL) {
+		return kIOReturnNoMemory;
+	}
+	{
+		const char * keys[6] = { "IOSurfaceWidth", "IOSurfaceHeight", "IOSurfacePixelFormat", "IOSurfaceBytesPerElement",
+		    "IOSurfaceBytesPerRow", "IOSurfaceAllocSize" };
+		uint32_t values[6] = { w->width, w->height, w->pixelFormat, w->bytesPerElement, w->bytesPerRow, (uint32_t) alloc };
+
+		for (unsigned i = 0; i < 6; i++) {
+			OSNumber * n = OSNumber::withNumber(values[i], 32);
+
+			props->setObject(keys[i], n);
+			OSSafeReleaseNULL(n);
+		}
+		OSNumber * a = OSNumber::withNumber(w->address, 64);
+
+		props->setObject("IOSurfaceAddress", a);
+		OSSafeReleaseNULL(a);
+	}
+	s = surfaceCreate(props, &ret);
+	props->release();
+	if (s == NULL) {
+		if (said < 16) {
+			said++;
+			IOLog("MiniIOSurface: wrap %ux%u failed %#x\n", w->width, w->height, ret);
+		}
+		return ret;
+	}
+	IOLockLock(gSurfaceLock);
+	ref = addRef(s);
+	ret = ref ? returnSurface(ref, false, args) : kIOReturnNoMemory;
+	if (ref != NULL && ret != kIOReturnSuccess) {
+		dropRef(ref);
+	}
+	surfaceUnhold(s);
+	IOLockUnlock(gSurfaceLock);
+	return ret;
 }
 
 IOReturn
@@ -1910,6 +1995,8 @@ IOSurfaceRootUserClient::externalMethodUntimed(uint32_t selector, IOExternalMeth
 		return methodInit(args);
 	case kSurfaceMethodCreate:
 		return methodCreate(args);
+	case kSurfaceMethodWrapClientImage:
+		return methodWrapClientImage(args);
 	case kSurfaceMethodLookup:
 		return methodLookup(args);
 	case kSurfaceMethodLookupFromPort:

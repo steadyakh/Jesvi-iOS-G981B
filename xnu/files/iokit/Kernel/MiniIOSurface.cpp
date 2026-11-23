@@ -1394,6 +1394,7 @@ IOSurfaceRootUserClient::methodWrapClientImage(IOExternalMethodArguments * args)
 	if (s != NULL && s->values != NULL) {
 		/* a picture's memory (a CGImage's: never written again): eagl.c need not add it up every frame */
 		s->values->setObject("RedwoodStill", kOSBooleanTrue);
+		s->updateValuesState();            /* (the size and seed IOSurface looks at before it asks) */
 	}
 	if (s == NULL) {
 		if (said < 16) {
